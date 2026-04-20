@@ -1,0 +1,10 @@
+@base = http://localhost:5180
+
+### List recent documents
+GET {{base}}/api/documents
+
+### Get a document by id
+GET {{base}}/api/documents/REPLACE_WITH_GUID
+
+### Download original file
+GET {{base}}/api/documents/REPLACE_WITH_GUID/file

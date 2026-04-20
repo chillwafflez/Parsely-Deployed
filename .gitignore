@@ -1,0 +1,35 @@
+# Secrets / env
+.env
+.env.local
+.env.*.local
+
+# .NET API
+api/bin/
+api/obj/
+api/*.user
+api/*.suo
+api/.vs/
+api/uploads/
+api/app.db
+api/app.db-shm
+api/app.db-wal
+api/appsettings.Development.json
+
+# Node / Next.js
+web/node_modules/
+web/.next/
+web/out/
+web/.vercel/
+web/*.tsbuildinfo
+web/next-env.d.ts
+
+# IDE
+.idea/
+.vs/
+
+# Test samples
+samples/
+
+# OS
+Thumbs.db
+.DS_Store
