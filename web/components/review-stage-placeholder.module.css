@@ -1,0 +1,135 @@
+.wrapper {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--color-bg);
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--color-line);
+  background: var(--color-surface);
+}
+
+.title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+
+.fileName {
+  font-family: var(--font-mono);
+  color: var(--color-ink-2);
+  font-weight: 500;
+  font-size: 12px;
+}
+
+.meta {
+  color: var(--color-ink-4);
+  font-size: 11px;
+  font-family: var(--font-mono);
+}
+
+.body {
+  flex: 1;
+  overflow: auto;
+  padding: 24px;
+}
+
+.error {
+  padding: 12px 14px;
+  margin-bottom: 16px;
+  border-radius: var(--radius-md);
+  background: var(--color-err-weak);
+  color: var(--color-err);
+  border: 1px solid color-mix(in oklab, var(--color-err) 25%, white);
+  font-size: 12.5px;
+}
+
+.empty {
+  padding: 40px 24px;
+  text-align: center;
+  color: var(--color-ink-4);
+}
+
+.fields {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 10px;
+}
+
+.field {
+  background: var(--color-surface);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-md);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border-left-width: 3px;
+}
+.field[data-confidence="high"] {
+  border-left-color: var(--color-ok);
+}
+.field[data-confidence="med"] {
+  border-left-color: var(--color-warn);
+}
+.field[data-confidence="low"] {
+  border-left-color: var(--color-err);
+}
+
+.fieldLabel {
+  font-size: 11px;
+  color: var(--color-ink-3);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.fieldValue {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--color-ink);
+  word-break: break-word;
+}
+
+.fieldMeta {
+  display: flex;
+  gap: 8px;
+  font-size: 11px;
+  align-items: center;
+}
+
+.type {
+  font-family: var(--font-mono);
+  color: var(--color-ink-3);
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-line);
+  padding: 1px 6px;
+  border-radius: 3px;
+}
+
+.confidence {
+  font-family: var(--font-mono);
+  color: var(--color-ink-3);
+  margin-left: auto;
+}
+
+.field[data-confidence="high"] .confidence {
+  color: var(--color-ok);
+}
+.field[data-confidence="med"] .confidence {
+  color: var(--color-warn);
+}
+.field[data-confidence="low"] .confidence {
+  color: var(--color-err);
+}

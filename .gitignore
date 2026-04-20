@@ -26,9 +26,11 @@ web/next-env.d.ts
 # IDE
 .idea/
 .vs/
+.claude
 
 # Test samples
 samples/
+Document Parsing Service Prototype-handoff
 
 # OS
 Thumbs.db

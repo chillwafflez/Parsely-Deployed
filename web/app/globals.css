@@ -1,15 +1,79 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+
+@theme {
+  /* Neutrals */
+  --color-bg: #f6f7f9;
+  --color-surface: #ffffff;
+  --color-surface-2: #fbfbfd;
+  --color-line: #e5e7ec;
+  --color-line-strong: #d6d9e0;
+
+  /* Ink (text) */
+  --color-ink: #0f172a;
+  --color-ink-2: #334155;
+  --color-ink-3: #64748b;
+  --color-ink-4: #94a3b8;
+
+  /* Accent — cool blue */
+  --color-accent: oklch(0.52 0.15 232);
+  --color-accent-weak: oklch(0.96 0.035 232);
+  --color-accent-border: oklch(0.88 0.06 232);
+  --color-accent-ink: oklch(0.38 0.13 232);
+
+  /* Semantic */
+  --color-ok: oklch(0.62 0.13 152);
+  --color-ok-weak: oklch(0.95 0.04 152);
+  --color-warn: oklch(0.72 0.14 75);
+  --color-warn-weak: oklch(0.96 0.05 75);
+  --color-err: oklch(0.58 0.18 25);
+  --color-err-weak: oklch(0.96 0.04 25);
+
+  /* Typography */
+  --font-ui: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
+
+  /* Radii — override defaults */
+  --radius-md: 6px;
+  --radius-lg: 10px;
+
+  /* Shadows — override defaults */
+  --shadow-sm: 0 1px 0 rgba(15, 23, 42, 0.04), 0 1px 2px rgba(15, 23, 42, 0.04);
+  --shadow-md: 0 1px 0 rgba(15, 23, 42, 0.04), 0 8px 24px -12px rgba(15, 23, 42, 0.18);
+  --shadow-lg: 0 8px 32px -8px rgba(15, 23, 42, 0.22), 0 2px 6px rgba(15, 23, 42, 0.06);
+}
 
 html,
 body {
-  padding: 0;
+  height: 100%;
   margin: 0;
-  background-color: #faf9f8;
-  color: #242424;
 }
 
-* {
+body {
+  font-family: var(--font-ui);
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--color-ink);
+  background: var(--color-bg);
+  -webkit-font-smoothing: antialiased;
+}
+
+*,
+*::before,
+*::after {
   box-sizing: border-box;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-line-strong);
+  border-radius: 10px;
+  border: 2px solid var(--color-surface);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-ink-4);
 }
