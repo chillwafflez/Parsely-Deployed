@@ -93,9 +93,9 @@ public class DocumentsController(
 
         try
         {
-            var fields = await intelligence.AnalyzeAsync(storagePath, document.ModelId, ct);
+            var extraction = await intelligence.AnalyzeAsync(storagePath, document.ModelId, ct);
 
-            foreach (var f in fields)
+            foreach (var f in extraction.Fields)
             {
                 document.ExtractedFields.Add(new ExtractedField
                 {
@@ -114,7 +114,7 @@ public class DocumentsController(
             document.Status = DocumentStatus.Completed;
             document.CompletedAt = DateTime.UtcNow;
 
-            await TryMatchTemplateAsync(document, ct);
+            await TryMatchTemplateAsync(document, extraction.Pages, ct);
         }
         catch (Exception ex)
         {
@@ -135,7 +135,10 @@ public class DocumentsController(
     /// attach it to the document, and apply its field rules. Phase 2 will
     /// replace the vendor heuristic with layout-fingerprint matching.
     /// </summary>
-    private async Task TryMatchTemplateAsync(Document document, CancellationToken ct)
+    private async Task TryMatchTemplateAsync(
+        Document document,
+        IReadOnlyList<PageExtraction> pages,
+        CancellationToken ct)
     {
         var vendorValue = document.ExtractedFields
             .FirstOrDefault(f =>
@@ -156,7 +159,7 @@ public class DocumentsController(
         if (match is not null)
         {
             document.Template = match;
-            ApplyTemplateRules(document, match);
+            ApplyTemplateRules(document, match, pages);
         }
     }
 
@@ -165,11 +168,14 @@ public class DocumentsController(
     /// For fields Azure DI already extracted (matched by name, case-insensitive),
     /// overrides <see cref="ExtractedField.DataType"/> and
     /// <see cref="ExtractedField.IsRequired"/> from the rule. For rules that
-    /// weren't extracted at all, injects an empty placeholder with the rule's
-    /// bounding region and flags so it surfaces in the Inspector's Custom
-    /// group (and, if required, the "Missing Req." stat).
+    /// weren't extracted at all, runs a region-based word pickup against the
+    /// layout results and injects a field with the extracted value (or an
+    /// empty placeholder with zero confidence if no words fell inside).
     /// </summary>
-    private static void ApplyTemplateRules(Document document, Template template)
+    private static void ApplyTemplateRules(
+        Document document,
+        Template template,
+        IReadOnlyList<PageExtraction> pages)
     {
         foreach (var rule in template.Rules)
         {
@@ -185,17 +191,18 @@ public class DocumentsController(
                 continue;
             }
 
-            // AI didn't extract this field on this document — inject an
-            // empty placeholder derived from the template so the user sees
-            // "this should be here, come fill it in."
+            // AI didn't extract this field — attempt to pull text from the
+            // layout words inside the rule's saved region.
+            var (value, confidence) = ExtractTextFromRule(rule, pages);
+
             document.ExtractedFields.Add(new ExtractedField
             {
                 Id = Guid.NewGuid(),
                 DocumentId = document.Id,
                 Name = rule.Name,
-                Value = null,
+                Value = value,
                 DataType = rule.DataType,
-                Confidence = 1.0f,
+                Confidence = confidence,
                 IsRequired = rule.IsRequired,
                 IsCorrected = false,
                 IsUserAdded = true,
@@ -301,6 +308,84 @@ public class DocumentsController(
         }
 
         return Ok(ExtractedFieldResponse.FromEntity(field));
+    }
+
+    /// <summary>
+    /// Picks layout words whose center point falls inside the rule's
+    /// axis-aligned bounding region, concatenates them, and averages their
+    /// confidence. Returns <c>(null, 0)</c> when the region is missing, the
+    /// page isn't in the layout, or no words fell inside.
+    /// </summary>
+    private static (string? Value, float Confidence) ExtractTextFromRule(
+        TemplateFieldRule rule,
+        IReadOnlyList<PageExtraction> pages)
+    {
+        if (string.IsNullOrWhiteSpace(rule.BoundingRegionsJson))
+            return (null, 0f);
+
+        var regions = JsonSerializer.Deserialize<List<BoundingRegionResponse>>(rule.BoundingRegionsJson);
+        if (regions is null || regions.Count == 0) return (null, 0f);
+
+        var region = regions[0];
+        var page = pages.FirstOrDefault(p => p.PageNumber == region.PageNumber);
+        if (page is null) return (null, 0f);
+
+        var bounds = AxisAlignedBounds(region.Polygon);
+        if (!bounds.HasValue) return (null, 0f);
+
+        var matched = page.Words
+            .Where(w => WordCenterInside(w.Polygon, bounds.Value))
+            .ToList();
+
+        if (matched.Count == 0) return (null, 0f);
+
+        var value = string.Join(" ", matched.Select(w => w.Content)).Trim();
+        var confidence = matched.Average(w => w.Confidence);
+
+        return (string.IsNullOrWhiteSpace(value) ? null : value, confidence);
+    }
+
+    private static (float MinX, float MinY, float MaxX, float MaxY)? AxisAlignedBounds(
+        IReadOnlyList<float> polygon)
+    {
+        if (polygon is null || polygon.Count < 2) return null;
+
+        float minX = float.MaxValue, minY = float.MaxValue;
+        float maxX = float.MinValue, maxY = float.MinValue;
+
+        for (int i = 0; i + 1 < polygon.Count; i += 2)
+        {
+            var x = polygon[i];
+            var y = polygon[i + 1];
+            if (x < minX) minX = x;
+            if (x > maxX) maxX = x;
+            if (y < minY) minY = y;
+            if (y > maxY) maxY = y;
+        }
+
+        return (minX, minY, maxX, maxY);
+    }
+
+    private static bool WordCenterInside(
+        IReadOnlyList<float> wordPolygon,
+        (float MinX, float MinY, float MaxX, float MaxY) bounds)
+    {
+        if (wordPolygon is null || wordPolygon.Count < 2) return false;
+
+        float sumX = 0, sumY = 0;
+        int count = 0;
+        for (int i = 0; i + 1 < wordPolygon.Count; i += 2)
+        {
+            sumX += wordPolygon[i];
+            sumY += wordPolygon[i + 1];
+            count++;
+        }
+        if (count == 0) return false;
+
+        var cx = sumX / count;
+        var cy = sumY / count;
+
+        return cx >= bounds.MinX && cx <= bounds.MaxX && cy >= bounds.MinY && cy <= bounds.MaxY;
     }
 
     private static string GuessContentType(string fileName) => Path.GetExtension(fileName).ToLowerInvariant() switch

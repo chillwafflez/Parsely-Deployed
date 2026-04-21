@@ -27,7 +27,7 @@ public class DocumentIntelligenceService : IDocumentIntelligenceService
         _logger = logger;
     }
 
-    public async Task<IReadOnlyList<ExtractedFieldData>> AnalyzeAsync(
+    public async Task<DocumentExtractionResult> AnalyzeAsync(
         string filePath,
         string modelId,
         CancellationToken cancellationToken = default)
@@ -44,8 +44,8 @@ public class DocumentIntelligenceService : IDocumentIntelligenceService
             cancellationToken: cancellationToken);
 
         var result = operation.Value;
-        var fields = new List<ExtractedFieldData>();
 
+        var fields = new List<ExtractedFieldData>();
         if (result.Documents is { Count: > 0 })
         {
             var document = result.Documents[0];
@@ -55,7 +55,18 @@ public class DocumentIntelligenceService : IDocumentIntelligenceService
             }
         }
 
-        return fields;
+        var pages = (result.Pages ?? new List<DocumentPage>())
+            .Select(p => new PageExtraction(
+                PageNumber: p.PageNumber,
+                Words: (p.Words ?? new List<DocumentWord>())
+                    .Select(w => new WordData(
+                        Content: w.Content,
+                        Polygon: w.Polygon?.ToArray() ?? Array.Empty<float>(),
+                        Confidence: w.Confidence))
+                    .ToList()))
+            .ToList();
+
+        return new DocumentExtractionResult(fields, pages);
     }
 
     private static ExtractedFieldData ToFieldData(string name, DocumentField field)
