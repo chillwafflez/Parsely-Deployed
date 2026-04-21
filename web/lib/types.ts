@@ -97,6 +97,7 @@ export interface DocumentSummary {
   status: DocumentStatus;
   createdAt: string;
   fieldCount: number;
+  templateName: string | null;
 }
 
 /** Client-side enriched field — derived from API's `ExtractedField` with UI state. */
@@ -156,5 +157,3 @@ export interface CreateTemplatePayload {
   applyTo: TemplateApplyTo;
   sourceDocumentId: string;
 }
-
-export type SidebarView = "parse" | "queue" | "templates" | "settings";

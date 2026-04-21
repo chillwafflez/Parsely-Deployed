@@ -30,7 +30,8 @@ public class DocumentsController(
                 d.OriginalFileName,
                 d.Status.ToString(),
                 d.CreatedAt,
-                d.ExtractedFields.Count))
+                d.ExtractedFields.Count,
+                d.Template != null ? d.Template.Name : null))
             .ToListAsync(ct);
 
         return Ok(summaries);

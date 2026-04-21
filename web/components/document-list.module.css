@@ -1,0 +1,321 @@
+/* Full-workspace container */
+.page {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  position: relative;
+  background: var(--color-bg);
+}
+
+/* Page header bar */
+.pageHeader {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 13px 24px;
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-line);
+  flex-shrink: 0;
+}
+
+.pageTitle {
+  flex: 1;
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--color-ink);
+  letter-spacing: -0.01em;
+}
+
+.hiddenInput {
+  display: none;
+}
+
+/* Scrollable content area */
+.content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px 24px;
+}
+
+/* Inline error banner */
+.errorBanner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  margin-bottom: 16px;
+  background: var(--color-err-weak);
+  border: 1px solid color-mix(in oklab, var(--color-err) 22%, white);
+  border-radius: var(--radius-md);
+  color: var(--color-err);
+  font-size: 13px;
+}
+
+/* Table wrapper — needed to apply border-radius with border-collapse */
+.tableWrapper {
+  background: var(--color-surface);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  box-shadow: var(--shadow-sm);
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.table thead tr {
+  background: var(--color-surface-2);
+}
+
+.table th {
+  padding: 8px 14px;
+  text-align: left;
+  font-size: 10.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.055em;
+  color: var(--color-ink-3);
+  border-bottom: 1px solid var(--color-line);
+  white-space: nowrap;
+}
+
+/* Right-align the fields count column */
+.colRight {
+  text-align: right;
+}
+
+/* Table rows */
+.row {
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.row:not(:last-child) td {
+  border-bottom: 1px solid var(--color-line);
+}
+
+.row:hover td {
+  background: var(--color-accent-weak);
+}
+
+.table td {
+  padding: 10px 14px;
+  font-size: 13px;
+  color: var(--color-ink-2);
+  vertical-align: middle;
+}
+
+/* Name cell */
+.cellName {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 360px;
+}
+
+.fileIcon {
+  flex-shrink: 0;
+  color: var(--color-ink-4);
+}
+
+.fileName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+  color: var(--color-ink);
+}
+
+/* Status pill — the colored dot is rendered via ::before */
+.statusPill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.statusPill::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  flex-shrink: 0;
+}
+
+.statusOk {
+  background: var(--color-ok-weak);
+  color: var(--color-ok);
+}
+
+.statusErr {
+  background: var(--color-err-weak);
+  color: var(--color-err);
+}
+
+.statusWarn {
+  background: var(--color-warn-weak);
+  color: var(--color-warn);
+}
+
+.statusNeutral {
+  background: var(--color-surface-2);
+  color: var(--color-ink-3);
+  border: 1px solid var(--color-line);
+}
+
+/* Template match badge */
+.templateBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--color-accent-ink);
+  background: var(--color-accent-weak);
+  border: 1px solid var(--color-accent-border);
+  padding: 2px 8px;
+  border-radius: 999px;
+  max-width: 200px;
+}
+
+.templateBadgeText {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dash {
+  color: var(--color-ink-4);
+}
+
+/* Fields count */
+.mono {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--color-ink-3);
+}
+
+/* Time cell */
+.cellTime {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--color-ink-3);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+/* ── Empty state ───────────────────────────────────────────── */
+
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 80px 24px;
+  text-align: center;
+  gap: 16px;
+}
+
+.emptyIcon {
+  width: 56px;
+  height: 56px;
+  background: var(--color-accent-weak);
+  border: 1px solid var(--color-accent-border);
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  color: var(--color-accent-ink);
+}
+
+.empty h2 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--color-ink);
+  letter-spacing: -0.01em;
+}
+
+.empty p {
+  margin: 0;
+  color: var(--color-ink-3);
+  font-size: 13px;
+  max-width: 300px;
+  line-height: 1.55;
+}
+
+/* ── Drag-and-drop overlay ─────────────────────────────────── */
+
+.dropOverlay {
+  position: absolute;
+  inset: 0;
+  background: var(--color-accent-weak);
+  border: 2px dashed var(--color-accent);
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  z-index: 10;
+}
+
+.dropMessage {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  color: var(--color-accent-ink);
+  font-size: 15px;
+  font-weight: 600;
+  background: var(--color-surface);
+  padding: 24px 36px;
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+}
+
+/* ── Loading skeleton ──────────────────────────────────────── */
+
+.skeletonWrapper {
+  background: var(--color-surface);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  box-shadow: var(--shadow-sm);
+}
+
+.skeletonRow {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 13px 14px;
+}
+
+.skeletonRow:not(:last-child) {
+  border-bottom: 1px solid var(--color-line);
+}
+
+.skeletonCell {
+  height: 13px;
+  border-radius: 4px;
+  background: var(--color-line);
+  flex-shrink: 0;
+  animation: shimmer 1.4s ease-in-out infinite;
+}
+
+/* Stagger shimmer so rows don't pulse in lockstep */
+.skeletonRow:nth-child(2) .skeletonCell { animation-delay: 0.15s; }
+.skeletonRow:nth-child(3) .skeletonCell { animation-delay: 0.3s; }
+.skeletonRow:nth-child(4) .skeletonCell { animation-delay: 0.45s; }
+.skeletonRow:nth-child(5) .skeletonCell { animation-delay: 0.6s; }
+
+@keyframes shimmer {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}

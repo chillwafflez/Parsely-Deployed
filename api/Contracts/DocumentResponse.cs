@@ -69,4 +69,5 @@ public record DocumentSummary(
     string FileName,
     string Status,
     DateTime CreatedAt,
-    int FieldCount);
+    int FieldCount,
+    string? TemplateName);

@@ -6,7 +6,7 @@ import { Sidebar } from "./sidebar";
 import { Toast } from "./toast";
 import { AppShellContext, type ToastTone } from "@/lib/app-shell-context";
 import { useTemplates } from "@/lib/hooks/use-templates";
-import type { DocumentResponse, SidebarView } from "@/lib/types";
+import type { DocumentResponse } from "@/lib/types";
 import styles from "./app-shell.module.css";
 
 const TOAST_MS = 2400;
@@ -24,7 +24,6 @@ interface ToastState {
  * single toast instance — pages drive all three via `useAppShell()`.
  */
 export function AppShell({ children }: { children: React.ReactNode }) {
-  const [view, setView] = React.useState<SidebarView>("parse");
   const [activeDocument, setActiveDocument] =
     React.useState<DocumentResponse | null>(null);
   const [toast, setToast] = React.useState<ToastState | null>(null);
@@ -74,8 +73,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         />
         <div className={styles.body}>
           <Sidebar
-            view={view}
-            onChangeView={setView}
             templates={templates}
             activeTemplateId={activeDocument?.templateId ?? null}
             onPickTemplate={() => {
