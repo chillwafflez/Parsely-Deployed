@@ -157,5 +157,4 @@ export interface CreateTemplatePayload {
   sourceDocumentId: string;
 }
 
-export type AppPhase = "upload" | "parsing" | "review";
 export type SidebarView = "parse" | "queue" | "templates" | "settings";

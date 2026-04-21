@@ -58,6 +58,24 @@
   background: var(--color-surface-2);
 }
 
+.templateBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: 8px;
+  padding: 4px 9px 4px 8px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-accent-ink);
+  background: color-mix(in oklch, var(--color-accent) 10%, transparent);
+  border: 1px solid color-mix(in oklch, var(--color-accent) 30%, transparent);
+  border-radius: 999px;
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .avatar {
   width: 30px;
   height: 30px;

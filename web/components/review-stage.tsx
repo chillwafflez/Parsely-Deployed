@@ -5,7 +5,6 @@ import { DocumentPane } from "./document-pane";
 import { Inspector } from "./inspector";
 import { NameFieldModal } from "./name-field-modal";
 import { SaveTemplateModal } from "./save-template-modal";
-import { Toast } from "./toast";
 import {
   createField,
   createTemplate,
@@ -13,6 +12,7 @@ import {
   fileUrl as apiFileUrl,
   updateField,
 } from "@/lib/api-client";
+import { useAppShell } from "@/lib/app-shell-context";
 import type {
   DocumentResponse,
   DrawResult,
@@ -25,40 +25,33 @@ import styles from "./review-stage.module.css";
 
 interface ReviewStageProps {
   document: DocumentResponse;
-  onTemplatesChanged: () => void;
+  /**
+   * Invoked with a state updater whenever the user mutates the document.
+   * Kept as an updater (rather than a new-value callback) so optimistic
+   * edits can compose on the freshest server state.
+   */
+  onDocumentChange: (updater: (prev: DocumentResponse) => DocumentResponse) => void;
 }
 
 /**
  * Composes the PDF viewer (left) with the Inspector (right). Owns all
  * document-scoped mutations (edit, create via draw, delete, save-as-template)
- * and notifies the parent when templates change so the sidebar can refresh.
+ * and surfaces toast + templates-refresh via the shell context. The document
+ * itself is a controlled prop — the parent loader keeps the shell in sync.
  */
-export function ReviewStage({ document: initialDocument, onTemplatesChanged }: ReviewStageProps) {
-  const [document, setDocument] = React.useState(initialDocument);
+export function ReviewStage({ document, onDocumentChange }: ReviewStageProps) {
+  const { showToast, refreshTemplates } = useAppShell();
   const [selectedFieldId, setSelectedFieldId] = React.useState<string | null>(null);
   const [pendingDraw, setPendingDraw] = React.useState<DrawResult | null>(null);
   const [showSaveTemplate, setShowSaveTemplate] = React.useState(false);
-  const [toast, setToast] = React.useState<{ message: string; tone: "ok" | "err" } | null>(null);
-
-  React.useEffect(() => {
-    setDocument(initialDocument);
-    setSelectedFieldId(null);
-    setPendingDraw(null);
-    setShowSaveTemplate(false);
-  }, [initialDocument]);
 
   const pdfUrl = React.useMemo(() => apiFileUrl(document.id), [document.id]);
-
-  const showToast = React.useCallback((message: string, tone: "ok" | "err" = "ok") => {
-    setToast({ message, tone });
-    window.setTimeout(() => setToast(null), 2400);
-  }, []);
 
   /** Apply a field mutation optimistically; returns a rollback closure. */
   const applyOptimisticUpdate = React.useCallback(
     (fieldId: string, mutate: (f: ExtractedField) => ExtractedField) => {
       let previous: ExtractedField | null = null;
-      setDocument((prev) => {
+      onDocumentChange((prev) => {
         const before = prev.fields.find((f) => f.id === fieldId);
         if (before) previous = before;
         return {
@@ -68,13 +61,13 @@ export function ReviewStage({ document: initialDocument, onTemplatesChanged }: R
       });
       return () => {
         if (!previous) return;
-        setDocument((prev) => ({
+        onDocumentChange((prev) => ({
           ...prev,
           fields: prev.fields.map((f) => (f.id === fieldId ? previous! : f)),
         }));
       };
     },
-    []
+    [onDocumentChange]
   );
 
   const handleUpdateField = React.useCallback(
@@ -89,7 +82,7 @@ export function ReviewStage({ document: initialDocument, onTemplatesChanged }: R
 
       try {
         const saved = await updateField(document.id, fieldId, update);
-        setDocument((prev) => ({
+        onDocumentChange((prev) => ({
           ...prev,
           fields: prev.fields.map((f) => (f.id === fieldId ? saved : f)),
         }));
@@ -98,7 +91,7 @@ export function ReviewStage({ document: initialDocument, onTemplatesChanged }: R
         showToast(err instanceof Error ? err.message : "Save failed", "err");
       }
     },
-    [applyOptimisticUpdate, document.id, showToast]
+    [applyOptimisticUpdate, document.id, onDocumentChange, showToast]
   );
 
   const handleDeleteField = React.useCallback(
@@ -106,7 +99,7 @@ export function ReviewStage({ document: initialDocument, onTemplatesChanged }: R
       let removed: ExtractedField | null = null;
       let removedIndex = -1;
 
-      setDocument((prev) => {
+      onDocumentChange((prev) => {
         removedIndex = prev.fields.findIndex((f) => f.id === fieldId);
         if (removedIndex >= 0) removed = prev.fields[removedIndex];
         return { ...prev, fields: prev.fields.filter((f) => f.id !== fieldId) };
@@ -121,7 +114,7 @@ export function ReviewStage({ document: initialDocument, onTemplatesChanged }: R
         if (removed && removedIndex >= 0) {
           const restore = removed;
           const index = removedIndex;
-          setDocument((prev) => {
+          onDocumentChange((prev) => {
             const fields = [...prev.fields];
             fields.splice(index, 0, restore);
             return { ...prev, fields };
@@ -130,7 +123,7 @@ export function ReviewStage({ document: initialDocument, onTemplatesChanged }: R
         showToast(err instanceof Error ? err.message : "Delete failed", "err");
       }
     },
-    [document.id, selectedFieldId, showToast]
+    [document.id, onDocumentChange, selectedFieldId, showToast]
   );
 
   const handleDrawComplete = React.useCallback((result: DrawResult) => {
@@ -152,7 +145,7 @@ export function ReviewStage({ document: initialDocument, onTemplatesChanged }: R
           pageNumber: pendingDraw.pageNumber,
           polygon: pendingDraw.polygon,
         });
-        setDocument((prev) => ({ ...prev, fields: [...prev.fields, created] }));
+        onDocumentChange((prev) => ({ ...prev, fields: [...prev.fields, created] }));
         setSelectedFieldId(created.id);
         setPendingDraw(null);
         showToast("Field added — AI will learn this region");
@@ -160,7 +153,7 @@ export function ReviewStage({ document: initialDocument, onTemplatesChanged }: R
         showToast(err instanceof Error ? err.message : "Create failed", "err");
       }
     },
-    [document.id, pendingDraw, showToast]
+    [document.id, onDocumentChange, pendingDraw, showToast]
   );
 
   const handleOpenSaveTemplate = React.useCallback(() => {
@@ -186,19 +179,19 @@ export function ReviewStage({ document: initialDocument, onTemplatesChanged }: R
           applyTo: draft.applyTo,
           sourceDocumentId: document.id,
         });
-        setDocument((prev) => ({
+        onDocumentChange((prev) => ({
           ...prev,
           templateId: template.id,
           templateName: template.name,
         }));
         setShowSaveTemplate(false);
-        onTemplatesChanged();
+        void refreshTemplates();
         showToast(`Template saved · ${template.name}`);
       } catch (err) {
         showToast(err instanceof Error ? err.message : "Save template failed", "err");
       }
     },
-    [document.id, onTemplatesChanged, showToast]
+    [document.id, onDocumentChange, refreshTemplates, showToast]
   );
 
   const suggestedTemplateName = React.useMemo(() => {
@@ -243,7 +236,6 @@ export function ReviewStage({ document: initialDocument, onTemplatesChanged }: R
           onSubmit={handleSubmitSaveTemplate}
         />
       )}
-      {toast && <Toast message={toast.message} tone={toast.tone} />}
     </div>
   );
 }

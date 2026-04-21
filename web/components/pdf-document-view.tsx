@@ -4,7 +4,6 @@ import * as React from "react";
 import { Document, Page, pdfjs } from "react-pdf";
 import "react-pdf/dist/Page/AnnotationLayer.css";
 import "react-pdf/dist/Page/TextLayer.css";
-import type { PDFPageProxy } from "pdfjs-dist";
 import type { DrawResult, ExtractedField } from "@/lib/types";
 import { BoundingBoxOverlay } from "./bounding-box-overlay";
 import { DrawingLayer } from "./drawing-layer";
@@ -61,20 +60,30 @@ export default function PdfDocumentView({
     onPagesLoaded?.(n);
   };
 
-  const handlePageLoad = React.useCallback((page: PDFPageProxy) => {
-    // The callback's `page.width` / `page.height` are the *rendered* pixel
-    // dimensions, not the native PDF points. Ask for the scale-1 viewport
-    // to get the true native size used by Azure DI's polygon coordinates.
-    const viewport = page.getViewport({ scale: 1 });
-    setPageDims((prev) => {
-      const next = new Map(prev);
-      next.set(page.pageNumber, {
-        widthPoints: viewport.width,
-        heightPoints: viewport.height,
+  // Structural type instead of `PDFPageProxy` from pdfjs-dist: pnpm's isolated
+  // store can resolve two separate copies of pdfjs-dist (one direct, one via
+  // react-pdf), and their `#private` brands collide under strict mode. The
+  // shape below is all we actually use.
+  const handlePageLoad = React.useCallback(
+    (page: {
+      pageNumber: number;
+      getViewport: (opts: { scale: number }) => { width: number; height: number };
+    }) => {
+      // The callback's `page.width` / `page.height` are the *rendered* pixel
+      // dimensions, not the native PDF points. Ask for the scale-1 viewport
+      // to get the true native size used by Azure DI's polygon coordinates.
+      const viewport = page.getViewport({ scale: 1 });
+      setPageDims((prev) => {
+        const next = new Map(prev);
+        next.set(page.pageNumber, {
+          widthPoints: viewport.width,
+          heightPoints: viewport.height,
+        });
+        return next;
       });
-      return next;
-    });
-  }, []);
+    },
+    []
+  );
 
   return (
     <div className={styles.stage}>

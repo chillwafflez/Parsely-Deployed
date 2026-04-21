@@ -9,7 +9,7 @@ import type { DocumentResponse } from "@/lib/types";
 import styles from "./upload-stage.module.css";
 
 interface UploadStageProps {
-  onUploadStart: () => void;
+  onUploadStart: (fileName: string) => void;
   onUploadComplete: (doc: DocumentResponse) => void;
   onUploadError: (message: string) => void;
 }
@@ -19,7 +19,7 @@ export function UploadStage({ onUploadStart, onUploadComplete, onUploadError }: 
   const [isDragging, setIsDragging] = React.useState(false);
 
   const handleFile = async (file: File) => {
-    onUploadStart();
+    onUploadStart(file.name);
     try {
       const doc = await uploadDocument(file);
       onUploadComplete(doc);

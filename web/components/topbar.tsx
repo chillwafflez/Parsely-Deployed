@@ -1,12 +1,13 @@
-import { Settings } from "lucide-react";
+import { LayoutTemplate, Settings } from "lucide-react";
 import { Button } from "./button";
 import styles from "./topbar.module.css";
 
 interface TopbarProps {
   documentName?: string;
+  templateName?: string | null;
 }
 
-export function Topbar({ documentName }: TopbarProps) {
+export function Topbar({ documentName, templateName }: TopbarProps) {
   return (
     <header className={styles.topbar}>
       <div className={styles.brand}>
@@ -25,6 +26,15 @@ export function Topbar({ documentName }: TopbarProps) {
           </>
         )}
       </nav>
+      {templateName && (
+        <span
+          className={styles.templateBadge}
+          title={`Matched template: ${templateName}`}
+        >
+          <LayoutTemplate size={12} aria-hidden="true" />
+          {templateName}
+        </span>
+      )}
       <div className="flex-1" />
       <span className={styles.env}>local · dev</span>
       <Button variant="ghost" aria-label="Settings">
