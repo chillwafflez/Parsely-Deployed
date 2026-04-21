@@ -1,9 +1,12 @@
 import type {
+  CreateTemplatePayload,
   DocumentResponse,
   DocumentSummary,
   ExtractedField,
   FieldCreate,
   FieldUpdate,
+  Template,
+  TemplateSummary,
 } from "./types";
 
 const API_BASE =
@@ -94,5 +97,42 @@ export async function deleteField(
   if (!res.ok) {
     const body = await res.text();
     throw new Error(`Delete failed (${res.status}): ${body || res.statusText}`);
+  }
+}
+
+export async function listTemplates(): Promise<TemplateSummary[]> {
+  const res = await fetch(`${API_BASE}/api/templates`, { cache: "no-store" });
+  if (!res.ok) throw new Error(`List templates failed: ${res.status}`);
+  return res.json();
+}
+
+export async function getTemplate(id: string): Promise<Template> {
+  const res = await fetch(`${API_BASE}/api/templates/${id}`, { cache: "no-store" });
+  if (!res.ok) throw new Error(`Get template failed: ${res.status}`);
+  return res.json();
+}
+
+export async function createTemplate(
+  payload: CreateTemplatePayload
+): Promise<Template> {
+  const res = await fetch(`${API_BASE}/api/templates`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`Create template failed (${res.status}): ${body || res.statusText}`);
+  }
+
+  return res.json();
+}
+
+export async function deleteTemplate(id: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/api/templates/${id}`, { method: "DELETE" });
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`Delete template failed (${res.status}): ${body || res.statusText}`);
   }
 }

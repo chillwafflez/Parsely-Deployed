@@ -1,4 +1,4 @@
-import type { FieldDataType, Template } from "./types";
+import type { FieldDataType } from "./types";
 
 export const FIELD_TYPES: { id: FieldDataType; label: string; hint: string }[] = [
   { id: "string", label: "String", hint: "Any text" },
@@ -22,10 +22,3 @@ export const CONFIDENCE_THRESHOLDS = {
   medium: 0.7,
 } as const;
 
-/**
- * Placeholder template library. In Day 6 these move to the API.
- * Matches the design's TEMPLATES shape for seamless replacement.
- */
-export const PLACEHOLDER_TEMPLATES: Template[] = [
-  { id: "tpl_invoice_generic", name: "Generic — Invoice", kind: "Invoice", runs: 0, lastUsed: "—", status: "draft" },
-];

@@ -11,6 +11,8 @@ public record DocumentResponse(
     DateTime CreatedAt,
     DateTime? CompletedAt,
     string? ErrorMessage,
+    Guid? TemplateId,
+    string? TemplateName,
     IReadOnlyList<ExtractedFieldResponse> Fields)
 {
     public static DocumentResponse FromEntity(Document doc) => new(
@@ -21,6 +23,8 @@ public record DocumentResponse(
         CreatedAt: doc.CreatedAt,
         CompletedAt: doc.CompletedAt,
         ErrorMessage: doc.ErrorMessage,
+        TemplateId: doc.TemplateId,
+        TemplateName: doc.Template?.Name,
         Fields: doc.ExtractedFields
             .OrderBy(f => f.Name)
             .Select(ExtractedFieldResponse.FromEntity)

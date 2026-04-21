@@ -11,6 +11,14 @@ public class Document
     public DateTime? CompletedAt { get; set; }
     public string? ErrorMessage { get; set; }
 
+    /// <summary>
+    /// Optional link to the template this document was matched against on
+    /// upload (by VendorName heuristic). Lets the Inspector show
+    /// "Template: X" without an extra round-trip.
+    /// </summary>
+    public Guid? TemplateId { get; set; }
+    public Template? Template { get; set; }
+
     public List<ExtractedField> ExtractedFields { get; set; } = new();
 }
 

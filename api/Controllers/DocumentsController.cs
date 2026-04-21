@@ -41,6 +41,7 @@ public class DocumentsController(
     {
         var doc = await db.Documents
             .Include(d => d.ExtractedFields)
+            .Include(d => d.Template)
             .FirstOrDefaultAsync(d => d.Id == id, ct);
 
         if (doc is null) return NotFound();
@@ -112,6 +113,8 @@ public class DocumentsController(
 
             document.Status = DocumentStatus.Completed;
             document.CompletedAt = DateTime.UtcNow;
+
+            await TryMatchTemplateAsync(document, ct);
         }
         catch (Exception ex)
         {
@@ -124,6 +127,81 @@ public class DocumentsController(
         await db.SaveChangesAsync(ct);
 
         return Ok(DocumentResponse.FromEntity(document));
+    }
+
+    /// <summary>
+    /// Stopgap template matching: if Azure DI extracted a VendorName, find
+    /// the most recent template whose VendorHint matches (case-insensitive),
+    /// attach it to the document, and apply its field rules. Phase 2 will
+    /// replace the vendor heuristic with layout-fingerprint matching.
+    /// </summary>
+    private async Task TryMatchTemplateAsync(Document document, CancellationToken ct)
+    {
+        var vendorValue = document.ExtractedFields
+            .FirstOrDefault(f =>
+                f.Name.Equals("VendorName", StringComparison.OrdinalIgnoreCase) &&
+                !string.IsNullOrWhiteSpace(f.Value))
+            ?.Value?.Trim();
+
+        if (string.IsNullOrWhiteSpace(vendorValue)) return;
+
+        var normalized = vendorValue.ToLowerInvariant();
+
+        var match = await db.Templates
+            .Include(t => t.Rules)
+            .Where(t => t.VendorHint != null && t.VendorHint.ToLower() == normalized)
+            .OrderByDescending(t => t.CreatedAt)
+            .FirstOrDefaultAsync(ct);
+
+        if (match is not null)
+        {
+            document.Template = match;
+            ApplyTemplateRules(document, match);
+        }
+    }
+
+    /// <summary>
+    /// Applies a matched template's rules to a freshly-extracted document.
+    /// For fields Azure DI already extracted (matched by name, case-insensitive),
+    /// overrides <see cref="ExtractedField.DataType"/> and
+    /// <see cref="ExtractedField.IsRequired"/> from the rule. For rules that
+    /// weren't extracted at all, injects an empty placeholder with the rule's
+    /// bounding region and flags so it surfaces in the Inspector's Custom
+    /// group (and, if required, the "Missing Req." stat).
+    /// </summary>
+    private static void ApplyTemplateRules(Document document, Template template)
+    {
+        foreach (var rule in template.Rules)
+        {
+            var existing = document.ExtractedFields
+                .FirstOrDefault(f => f.Name.Equals(rule.Name, StringComparison.OrdinalIgnoreCase));
+
+            if (existing is not null)
+            {
+                // Override type + required flag; leave AI-extracted value,
+                // confidence, and bounding regions untouched.
+                existing.DataType = rule.DataType;
+                existing.IsRequired = rule.IsRequired;
+                continue;
+            }
+
+            // AI didn't extract this field on this document — inject an
+            // empty placeholder derived from the template so the user sees
+            // "this should be here, come fill it in."
+            document.ExtractedFields.Add(new ExtractedField
+            {
+                Id = Guid.NewGuid(),
+                DocumentId = document.Id,
+                Name = rule.Name,
+                Value = null,
+                DataType = rule.DataType,
+                Confidence = 1.0f,
+                IsRequired = rule.IsRequired,
+                IsCorrected = false,
+                IsUserAdded = true,
+                BoundingRegionsJson = rule.BoundingRegionsJson,
+            });
+        }
     }
 
     [HttpPost("{documentId:guid}/fields")]

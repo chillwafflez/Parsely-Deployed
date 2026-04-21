@@ -7,7 +7,7 @@ import { UploadStage } from "@/components/upload-stage";
 import { ParsingOverlay } from "@/components/parsing-overlay";
 import { ReviewStage } from "@/components/review-stage";
 import { Toast } from "@/components/toast";
-import { PLACEHOLDER_TEMPLATES } from "@/lib/constants";
+import { useTemplates } from "@/lib/hooks/use-templates";
 import type { AppPhase, DocumentResponse, SidebarView } from "@/lib/types";
 import styles from "./app.module.css";
 
@@ -15,8 +15,11 @@ export default function HomePage() {
   const [phase, setPhase] = React.useState<AppPhase>("upload");
   const [view, setView] = React.useState<SidebarView>("parse");
   const [document, setDocument] = React.useState<DocumentResponse | null>(null);
-  const [activeTemplateId, setActiveTemplateId] = React.useState<string | null>(null);
   const [toast, setToast] = React.useState<{ message: string; tone: "ok" | "err" } | null>(null);
+
+  const { templates, loading: templatesLoading, refresh: refreshTemplates } = useTemplates();
+
+  const activeTemplateId = document?.templateId ?? null;
 
   const showToast = React.useCallback((message: string, tone: "ok" | "err" = "ok") => {
     setToast({ message, tone });
@@ -30,21 +33,29 @@ export default function HomePage() {
   const handleUploadComplete = (doc: DocumentResponse) => {
     setDocument(doc);
     setPhase("review");
+
     if (doc.status === "Failed") {
       showToast(doc.errorMessage ?? "Parsing failed", "err");
-    } else {
-      showToast(`Parsed · ${doc.fields.length} fields extracted`);
+      return;
     }
+
+    if (doc.templateName) {
+      const missingRequired = doc.fields.filter((f) => f.isRequired && !f.value).length;
+      const base = `Parsed · matched to ${doc.templateName}`;
+      const message =
+        missingRequired > 0
+          ? `${base} · ${missingRequired} required missing`
+          : base;
+      showToast(message, missingRequired > 0 ? "err" : "ok");
+      return;
+    }
+
+    showToast(`Parsed · ${doc.fields.length} fields extracted`);
   };
 
   const handleUploadError = (message: string) => {
     setPhase("upload");
     showToast(message, "err");
-  };
-
-  const handleNewUpload = () => {
-    setDocument(null);
-    setPhase("upload");
   };
 
   return (
@@ -54,9 +65,12 @@ export default function HomePage() {
         <Sidebar
           view={view}
           onChangeView={setView}
-          templates={PLACEHOLDER_TEMPLATES}
+          templates={templates}
           activeTemplateId={activeTemplateId}
-          onPickTemplate={setActiveTemplateId}
+          onPickTemplate={() => {
+            /* Selecting a template from the sidebar is a Phase 2 feature. */
+          }}
+          templatesLoading={templatesLoading}
           parseCount={phase === "review" ? 1 : 0}
           queueCount={0}
         />
@@ -71,7 +85,9 @@ export default function HomePage() {
           {phase === "parsing" && (
             <ParsingOverlay fileName={document?.fileName ?? "document"} />
           )}
-          {phase === "review" && document && <ReviewStage document={document} />}
+          {phase === "review" && document && (
+            <ReviewStage document={document} onTemplatesChanged={refreshTemplates} />
+          )}
         </main>
       </div>
       {toast && <Toast message={toast.message} tone={toast.tone} />}

@@ -4,9 +4,11 @@ import * as React from "react";
 import { DocumentPane } from "./document-pane";
 import { Inspector } from "./inspector";
 import { NameFieldModal } from "./name-field-modal";
+import { SaveTemplateModal } from "./save-template-modal";
 import { Toast } from "./toast";
 import {
   createField,
+  createTemplate,
   deleteField,
   fileUrl as apiFileUrl,
   updateField,
@@ -17,29 +19,32 @@ import type {
   ExtractedField,
   FieldDataType,
   FieldUpdate,
+  TemplateApplyTo,
 } from "@/lib/types";
 import styles from "./review-stage.module.css";
 
 interface ReviewStageProps {
   document: DocumentResponse;
+  onTemplatesChanged: () => void;
 }
 
 /**
- * Composes the PDF viewer (left) with the Inspector (right). Owns document
- * mutations: edit (PATCH), create via drawn region (POST), delete (DELETE).
- * Edits + deletes are optimistic with per-operation rollback; create is
- * pessimistic because the user is already waiting on the modal submission.
+ * Composes the PDF viewer (left) with the Inspector (right). Owns all
+ * document-scoped mutations (edit, create via draw, delete, save-as-template)
+ * and notifies the parent when templates change so the sidebar can refresh.
  */
-export function ReviewStage({ document: initialDocument }: ReviewStageProps) {
+export function ReviewStage({ document: initialDocument, onTemplatesChanged }: ReviewStageProps) {
   const [document, setDocument] = React.useState(initialDocument);
   const [selectedFieldId, setSelectedFieldId] = React.useState<string | null>(null);
   const [pendingDraw, setPendingDraw] = React.useState<DrawResult | null>(null);
+  const [showSaveTemplate, setShowSaveTemplate] = React.useState(false);
   const [toast, setToast] = React.useState<{ message: string; tone: "ok" | "err" } | null>(null);
 
   React.useEffect(() => {
     setDocument(initialDocument);
     setSelectedFieldId(null);
     setPendingDraw(null);
+    setShowSaveTemplate(false);
   }, [initialDocument]);
 
   const pdfUrl = React.useMemo(() => apiFileUrl(document.id), [document.id]);
@@ -150,7 +155,7 @@ export function ReviewStage({ document: initialDocument }: ReviewStageProps) {
         setDocument((prev) => ({ ...prev, fields: [...prev.fields, created] }));
         setSelectedFieldId(created.id);
         setPendingDraw(null);
-        showToast(`Field added — AI will learn this region`);
+        showToast("Field added — AI will learn this region");
       } catch (err) {
         showToast(err instanceof Error ? err.message : "Create failed", "err");
       }
@@ -158,9 +163,51 @@ export function ReviewStage({ document: initialDocument }: ReviewStageProps) {
     [document.id, pendingDraw, showToast]
   );
 
-  const handleSaveTemplate = React.useCallback(() => {
-    showToast("Save-as-template lands in Day 6", "err");
-  }, [showToast]);
+  const handleOpenSaveTemplate = React.useCallback(() => {
+    setShowSaveTemplate(true);
+  }, []);
+
+  const handleCancelSaveTemplate = React.useCallback(() => {
+    setShowSaveTemplate(false);
+  }, []);
+
+  const handleSubmitSaveTemplate = React.useCallback(
+    async (draft: {
+      name: string;
+      kind: string;
+      description: string;
+      applyTo: TemplateApplyTo;
+    }) => {
+      try {
+        const template = await createTemplate({
+          name: draft.name,
+          kind: draft.kind,
+          description: draft.description || null,
+          applyTo: draft.applyTo,
+          sourceDocumentId: document.id,
+        });
+        setDocument((prev) => ({
+          ...prev,
+          templateId: template.id,
+          templateName: template.name,
+        }));
+        setShowSaveTemplate(false);
+        onTemplatesChanged();
+        showToast(`Template saved · ${template.name}`);
+      } catch (err) {
+        showToast(err instanceof Error ? err.message : "Save template failed", "err");
+      }
+    },
+    [document.id, onTemplatesChanged, showToast]
+  );
+
+  const suggestedTemplateName = React.useMemo(() => {
+    const vendor = document.fields.find(
+      (f) => f.name.toLowerCase() === "vendorname" && f.value
+    );
+    if (vendor?.value) return `${vendor.value.trim()} — Invoice`;
+    return document.fileName.replace(/\.[^.]+$/, "") + " — Template";
+  }, [document.fields, document.fileName]);
 
   return (
     <div className={styles.wrapper}>
@@ -178,13 +225,22 @@ export function ReviewStage({ document: initialDocument }: ReviewStageProps) {
         onSelectField={setSelectedFieldId}
         onUpdateField={handleUpdateField}
         onDeleteField={handleDeleteField}
-        onSaveTemplate={handleSaveTemplate}
+        onSaveTemplate={handleOpenSaveTemplate}
+        templateName={document.templateName ?? undefined}
       />
       {pendingDraw && (
         <NameFieldModal
           bbox={pendingDraw.bbox}
           onCancel={handleCancelDraw}
           onSubmit={handleSubmitDraw}
+        />
+      )}
+      {showSaveTemplate && (
+        <SaveTemplateModal
+          fields={document.fields}
+          suggestedName={suggestedTemplateName}
+          onCancel={handleCancelSaveTemplate}
+          onSubmit={handleSubmitSaveTemplate}
         />
       )}
       {toast && <Toast message={toast.message} tone={toast.tone} />}

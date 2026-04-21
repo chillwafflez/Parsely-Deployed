@@ -86,6 +86,8 @@ export interface DocumentResponse {
   createdAt: string;
   completedAt: string | null;
   errorMessage: string | null;
+  templateId: string | null;
+  templateName: string | null;
   fields: ExtractedField[];
 }
 
@@ -110,14 +112,49 @@ export interface FieldViewModel {
   flag: FieldFlag | null;
 }
 
-/** A saved template in the sidebar library. Real templates arrive in Day 6. */
+/** Sidebar summary view of a saved template. */
+export interface TemplateSummary {
+  id: string;
+  name: string;
+  kind: string;
+  description: string | null;
+  applyTo: TemplateApplyTo;
+  createdAt: string;
+  ruleCount: number;
+  runs: number;
+}
+
+/** Full template with snapshot of field rules. */
 export interface Template {
   id: string;
   name: string;
   kind: string;
+  description: string | null;
+  applyTo: TemplateApplyTo;
+  vendorHint: string | null;
+  createdAt: string;
+  sourceDocumentId: string | null;
   runs: number;
-  lastUsed: string;
-  status: "active" | "draft";
+  rules: TemplateFieldRule[];
+}
+
+export interface TemplateFieldRule {
+  id: string;
+  name: string;
+  dataType: string;
+  isRequired: boolean;
+  boundingRegions: BoundingRegion[];
+}
+
+export type TemplateApplyTo = "vendor" | "similar" | "all";
+
+/** POST body for creating a template from a source document. */
+export interface CreateTemplatePayload {
+  name: string;
+  kind: string;
+  description: string | null;
+  applyTo: TemplateApplyTo;
+  sourceDocumentId: string;
 }
 
 export type AppPhase = "upload" | "parsing" | "review";

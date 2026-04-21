@@ -1,14 +1,16 @@
 import { FileText, Files, LayoutTemplate, Plus, Settings } from "lucide-react";
-import type { SidebarView, Template } from "@/lib/types";
+import type { SidebarView, TemplateSummary } from "@/lib/types";
 import { cn } from "@/lib/cn";
+import { formatRelativeTime } from "@/lib/format";
 import styles from "./sidebar.module.css";
 
 interface SidebarProps {
   view: SidebarView;
   onChangeView: (view: SidebarView) => void;
-  templates: Template[];
+  templates: TemplateSummary[];
   activeTemplateId: string | null;
   onPickTemplate: (id: string) => void;
+  templatesLoading: boolean;
   parseCount: number;
   queueCount: number;
 }
@@ -19,6 +21,7 @@ export function Sidebar({
   templates,
   activeTemplateId,
   onPickTemplate,
+  templatesLoading,
   parseCount,
   queueCount,
 }: SidebarProps) {
@@ -56,13 +59,15 @@ export function Sidebar({
 
       <div className={styles.section}>
         <span>Templates</span>
-        <button className={styles.add} title="New template" aria-label="New template">
+        <button className={styles.add} title="New template (save one from the review screen)" aria-label="New template" disabled>
           <Plus size={13} />
         </button>
       </div>
 
       <div className={styles.templates}>
-        {templates.length === 0 ? (
+        {templatesLoading ? (
+          <p className={styles.empty}>Loading templates…</p>
+        ) : templates.length === 0 ? (
           <p className={styles.empty}>No templates yet. Save one after reviewing a parse.</p>
         ) : (
           templates.map((t) => (
@@ -74,15 +79,12 @@ export function Sidebar({
             >
               <div className={styles.tplRow}>
                 <span className={styles.tplName}>{t.name}</span>
-                <span
-                  className={cn(styles.dot, t.status === "draft" && styles.dotDraft)}
-                  title={t.status}
-                />
+                <span className={styles.dot} title="active" />
               </div>
               <div className={styles.tplMeta}>
                 <span>{t.kind}</span>
                 <span className={styles.mono}>· {t.runs} runs</span>
-                <span className={styles.tplTime}>{t.lastUsed}</span>
+                <span className={styles.tplTime}>{formatRelativeTime(t.createdAt)}</span>
               </div>
             </button>
           ))
