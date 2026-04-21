@@ -173,3 +173,25 @@
 .dotDraft {
   background: var(--color-warn);
 }
+
+/* Template card skeleton — dimensions mirror `.tpl` so swapping to real
+   cards doesn't reflow the sidebar. */
+.templateSkeletonList {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.templateSkeletonCard {
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.templateSkeletonRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}

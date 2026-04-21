@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { History, Info, Save, Search, Sparkles } from "lucide-react";
+import { FileSearch, History, Info, PenLine, Save, Search, Sparkles } from "lucide-react";
 import { Button } from "./button";
 import { InspectorField } from "./inspector-field";
 import { cn } from "@/lib/cn";
@@ -110,11 +110,7 @@ export function Inspector({
 
       <div className={styles.list}>
         {!hasAnyVisible ? (
-          <p className={styles.empty}>
-            {fields.length === 0
-              ? "No fields extracted from this document."
-              : "No fields match the current filter."}
-          </p>
+          <EmptyState hasFields={fields.length > 0} />
         ) : (
           Array.from(grouped.entries()).map(([group, list]) => (
             <section key={group}>
@@ -162,6 +158,36 @@ export function Inspector({
         </div>
       </footer>
     </aside>
+  );
+}
+
+function EmptyState({ hasFields }: { hasFields: boolean }) {
+  // Two distinct empty cases: "no fields at all" (Azure DI missed everything,
+  // user can still recover by drawing one) vs. "filtered to zero" (data
+  // exists, just nothing matches the current search/filter).
+  if (!hasFields) {
+    return (
+      <div className={styles.emptyState}>
+        <div className={styles.emptyIcon}>
+          <PenLine size={22} aria-hidden="true" />
+        </div>
+        <h4>No fields extracted</h4>
+        <p>
+          Azure didn&rsquo;t identify any fields on this document. Draw a box
+          on the page to add one manually.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className={styles.emptyState}>
+      <div className={styles.emptyIconMuted}>
+        <FileSearch size={22} aria-hidden="true" />
+      </div>
+      <h4>No matches</h4>
+      <p>Try clearing the search or switching to the &ldquo;All&rdquo; filter.</p>
+    </div>
   );
 }
 

@@ -39,18 +39,9 @@
   padding: 20px 24px;
 }
 
-/* Inline error banner */
-.errorBanner {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 14px;
+/* Spacing override when ErrorBanner sits above the table */
+.errorBannerSpacing {
   margin-bottom: 16px;
-  background: var(--color-err-weak);
-  border: 1px solid color-mix(in oklab, var(--color-err) 22%, white);
-  border-radius: var(--radius-md);
-  color: var(--color-err);
-  font-size: 13px;
 }
 
 /* Table wrapper — needed to apply border-radius with border-collapse */
@@ -280,7 +271,7 @@
   box-shadow: var(--shadow-md);
 }
 
-/* ── Loading skeleton ──────────────────────────────────────── */
+/* ── Loading skeleton (layout only — shimmer comes from <Skeleton>) ── */
 
 .skeletonWrapper {
   background: var(--color-surface);
@@ -299,23 +290,4 @@
 
 .skeletonRow:not(:last-child) {
   border-bottom: 1px solid var(--color-line);
-}
-
-.skeletonCell {
-  height: 13px;
-  border-radius: 4px;
-  background: var(--color-line);
-  flex-shrink: 0;
-  animation: shimmer 1.4s ease-in-out infinite;
-}
-
-/* Stagger shimmer so rows don't pulse in lockstep */
-.skeletonRow:nth-child(2) .skeletonCell { animation-delay: 0.15s; }
-.skeletonRow:nth-child(3) .skeletonCell { animation-delay: 0.3s; }
-.skeletonRow:nth-child(4) .skeletonCell { animation-delay: 0.45s; }
-.skeletonRow:nth-child(5) .skeletonCell { animation-delay: 0.6s; }
-
-@keyframes shimmer {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.4; }
 }

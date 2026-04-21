@@ -13,6 +13,7 @@ import {
 import type { TemplateSummary } from "@/lib/types";
 import { cn } from "@/lib/cn";
 import { formatRelativeTime } from "@/lib/format";
+import { Skeleton } from "./skeleton";
 import styles from "./sidebar.module.css";
 
 interface SidebarProps {
@@ -88,7 +89,7 @@ export function Sidebar({
 
       <div className={styles.templates}>
         {templatesLoading ? (
-          <p className={styles.empty}>Loading templates…</p>
+          <TemplateListSkeleton />
         ) : templates.length === 0 ? (
           <p className={styles.empty}>No templates yet. Save one after reviewing a parse.</p>
         ) : (
@@ -135,6 +136,27 @@ function NavLink({ href, icon, label, count, active }: NavLinkProps) {
       <span>{label}</span>
       {count !== undefined && <span className={styles.count}>{count}</span>}
     </Link>
+  );
+}
+
+/** Shimmer placeholders sized to roughly match a real template card. */
+function TemplateListSkeleton() {
+  return (
+    <div
+      className={styles.templateSkeletonList}
+      aria-busy="true"
+      aria-label="Loading templates"
+    >
+      {Array.from({ length: 3 }).map((_, i) => (
+        <div key={i} className={styles.templateSkeletonCard}>
+          <div className={styles.templateSkeletonRow}>
+            <Skeleton width="60%" height={13} />
+            <Skeleton width={6} height={6} radius={999} />
+          </div>
+          <Skeleton width="45%" height={11} />
+        </div>
+      ))}
+    </div>
   );
 }
 

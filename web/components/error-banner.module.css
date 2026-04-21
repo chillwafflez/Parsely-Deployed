@@ -1,0 +1,61 @@
+.banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px 10px 14px;
+  background: var(--color-err-weak);
+  border: 1px solid color-mix(in oklab, var(--color-err) 22%, white);
+  border-radius: var(--radius-md);
+  color: var(--color-err);
+  font-size: 13px;
+}
+
+.icon {
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.body {
+  flex: 1;
+  min-width: 0;
+}
+
+.title {
+  font-weight: 600;
+  margin-bottom: 2px;
+  color: var(--color-ink);
+}
+
+.message {
+  line-height: 1.45;
+  word-wrap: break-word;
+  color: var(--color-ink-2);
+}
+
+.dismiss {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  background: transparent;
+  color: var(--color-err);
+  border-radius: 4px;
+  cursor: pointer;
+  opacity: 0.7;
+  transition: opacity 0.12s, background 0.12s;
+  padding: 0;
+  margin-top: -1px;
+}
+
+.dismiss:hover {
+  opacity: 1;
+  background: color-mix(in oklab, var(--color-err) 15%, white);
+}
+
+.dismiss:focus-visible {
+  outline: 2px solid var(--color-err);
+  outline-offset: 1px;
+  opacity: 1;
+}

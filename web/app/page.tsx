@@ -2,21 +2,25 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { UploadStage } from "@/components/upload-stage";
+import { ErrorBanner } from "@/components/error-banner";
 import { ParsingOverlay } from "@/components/parsing-overlay";
+import { UploadStage } from "@/components/upload-stage";
 import { useAppShell } from "@/lib/app-shell-context";
 import type { DocumentResponse } from "@/lib/types";
+import styles from "./page.module.css";
 
 /**
  * Landing route: pick a file, show the parsing overlay while the upload
- * round-trips to Azure, then push to `/documents/[id]` on success. The
- * toast is owned by the AppShell so the "matched to X" message survives
- * the navigation and appears on the review page.
+ * round-trips to Azure, then push to `/documents/[id]` on success. Upload
+ * failures surface as a persistent inline banner above the dropzone;
+ * successful parses still use toasts so the confirmation rides the route
+ * transition to the review page.
  */
 export default function HomePage() {
   const router = useRouter();
   const { showToast, setActiveDocument } = useAppShell();
   const [parsingFileName, setParsingFileName] = React.useState<string | null>(null);
+  const [uploadError, setUploadError] = React.useState<string | null>(null);
 
   // Clear any leftover document breadcrumb when the user lands here.
   React.useEffect(() => {
@@ -24,6 +28,9 @@ export default function HomePage() {
   }, [setActiveDocument]);
 
   const handleUploadStart = React.useCallback((fileName: string) => {
+    // Clear any prior error so the banner doesn't sit there while the user
+    // watches their new upload progress.
+    setUploadError(null);
     setParsingFileName(fileName);
   }, []);
 
@@ -31,7 +38,7 @@ export default function HomePage() {
     (doc: DocumentResponse) => {
       if (doc.status === "Failed") {
         setParsingFileName(null);
-        showToast(doc.errorMessage ?? "Parsing failed", "err");
+        setUploadError(doc.errorMessage ?? "Parsing failed. Please try again.");
         return;
       }
 
@@ -51,23 +58,31 @@ export default function HomePage() {
     [router, showToast]
   );
 
-  const handleUploadError = React.useCallback(
-    (message: string) => {
-      setParsingFileName(null);
-      showToast(message, "err");
-    },
-    [showToast]
-  );
+  const handleUploadError = React.useCallback((message: string) => {
+    setParsingFileName(null);
+    setUploadError(message);
+  }, []);
 
   if (parsingFileName) {
     return <ParsingOverlay fileName={parsingFileName} />;
   }
 
   return (
-    <UploadStage
-      onUploadStart={handleUploadStart}
-      onUploadComplete={handleUploadComplete}
-      onUploadError={handleUploadError}
-    />
+    <div className={styles.root}>
+      {uploadError && (
+        <div className={styles.bannerSlot}>
+          <ErrorBanner
+            title="Upload failed"
+            message={uploadError}
+            onDismiss={() => setUploadError(null)}
+          />
+        </div>
+      )}
+      <UploadStage
+        onUploadStart={handleUploadStart}
+        onUploadComplete={handleUploadComplete}
+        onUploadError={handleUploadError}
+      />
+    </div>
   );
 }

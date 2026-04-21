@@ -1,5 +1,5 @@
-import { DocumentLoadingPanel } from "@/components/document-placeholder";
+import { DocumentLoadingSkeleton } from "@/components/document-placeholder";
 
 export default function Loading() {
-  return <DocumentLoadingPanel />;
+  return <DocumentLoadingSkeleton />;
 }

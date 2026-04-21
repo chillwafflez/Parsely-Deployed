@@ -2,14 +2,10 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import {
-  AlertCircle,
-  Clock,
-  FileText,
-  LayoutTemplate,
-  Upload,
-} from "lucide-react";
+import { Clock, FileText, LayoutTemplate, Upload } from "lucide-react";
 import { Button } from "./button";
+import { ErrorBanner } from "./error-banner";
+import { Skeleton } from "./skeleton";
 import { cn } from "@/lib/cn";
 import { uploadDocument } from "@/lib/api-client";
 import type { DocumentResponse, DocumentSummary } from "@/lib/types";
@@ -18,7 +14,11 @@ import styles from "./document-list.module.css";
 interface DocumentListProps {
   documents: DocumentSummary[];
   loading: boolean;
+  /** Fetch error for the documents list (not upload errors). */
   error: string | null;
+  /** Persistent upload error displayed above the list. */
+  uploadError?: string | null;
+  onDismissUploadError?: () => void;
   onUploadStart: (fileName: string) => void;
   onUploadComplete: (doc: DocumentResponse) => void;
   onUploadError: (message: string) => void;
@@ -119,11 +119,15 @@ function LoadingSkeleton() {
     ["140px", "70px", "90px", "28px", "65px"],
   ];
   return (
-    <div className={styles.skeletonWrapper} aria-busy="true" aria-label="Loading documents">
+    <div
+      className={styles.skeletonWrapper}
+      aria-busy="true"
+      aria-label="Loading documents"
+    >
       {widths.map((cols, i) => (
         <div key={i} className={styles.skeletonRow}>
           {cols.map((w, j) => (
-            <div key={j} className={styles.skeletonCell} style={{ width: w }} />
+            <Skeleton key={j} width={w} height={13} />
           ))}
         </div>
       ))}
@@ -140,6 +144,8 @@ export function DocumentList({
   documents,
   loading,
   error,
+  uploadError,
+  onDismissUploadError,
   onUploadStart,
   onUploadComplete,
   onUploadError,
@@ -211,11 +217,20 @@ export function DocumentList({
       </header>
 
       <div className={styles.content}>
+        {uploadError && (
+          <ErrorBanner
+            title="Upload failed"
+            message={uploadError}
+            onDismiss={onDismissUploadError}
+            className={styles.errorBannerSpacing}
+          />
+        )}
         {error && (
-          <div className={styles.errorBanner} role="alert">
-            <AlertCircle size={14} aria-hidden="true" />
-            {error}
-          </div>
+          <ErrorBanner
+            title="Couldn't load documents"
+            message={error}
+            className={styles.errorBannerSpacing}
+          />
         )}
 
         {loading ? (

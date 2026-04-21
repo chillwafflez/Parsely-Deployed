@@ -7,7 +7,7 @@ import { useAppShell } from "@/lib/app-shell-context";
 import { ReviewStage } from "./review-stage";
 import {
   DocumentErrorPanel,
-  DocumentLoadingPanel,
+  DocumentLoadingSkeleton,
 } from "./document-placeholder";
 import type { DocumentResponse } from "@/lib/types";
 
@@ -83,7 +83,7 @@ export function DocumentLoader({ documentId }: DocumentLoaderProps) {
 
   if (state.kind === "not-found") notFound();
   if (state.kind === "error") return <DocumentErrorPanel message={state.message} />;
-  if (state.kind === "loading") return <DocumentLoadingPanel />;
+  if (state.kind === "loading") return <DocumentLoadingSkeleton />;
 
   return (
     <ReviewStage

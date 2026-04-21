@@ -19,6 +19,7 @@ export default function DocumentsPage() {
   const { showToast, setActiveDocument } = useAppShell();
   const { documents, loading, error, refresh } = useDocuments();
   const [parsingFileName, setParsingFileName] = React.useState<string | null>(null);
+  const [uploadError, setUploadError] = React.useState<string | null>(null);
 
   // Ensure no stale document is highlighted in the shell while on this page.
   React.useEffect(() => {
@@ -26,6 +27,7 @@ export default function DocumentsPage() {
   }, [setActiveDocument]);
 
   const handleUploadStart = React.useCallback((fileName: string) => {
+    setUploadError(null);
     setParsingFileName(fileName);
   }, []);
 
@@ -34,7 +36,7 @@ export default function DocumentsPage() {
       if (doc.status === "Failed") {
         setParsingFileName(null);
         void refresh();
-        showToast(doc.errorMessage ?? "Parsing failed", "err");
+        setUploadError(doc.errorMessage ?? "Parsing failed. Please try again.");
         return;
       }
 
@@ -54,13 +56,14 @@ export default function DocumentsPage() {
     [router, showToast, refresh]
   );
 
-  const handleUploadError = React.useCallback(
-    (message: string) => {
-      setParsingFileName(null);
-      showToast(message, "err");
-    },
-    [showToast]
-  );
+  const handleUploadError = React.useCallback((message: string) => {
+    setParsingFileName(null);
+    setUploadError(message);
+  }, []);
+
+  const handleDismissUploadError = React.useCallback(() => {
+    setUploadError(null);
+  }, []);
 
   if (parsingFileName) {
     return <ParsingOverlay fileName={parsingFileName} />;
@@ -71,6 +74,8 @@ export default function DocumentsPage() {
       documents={documents}
       loading={loading}
       error={error}
+      uploadError={uploadError}
+      onDismissUploadError={handleDismissUploadError}
       onUploadStart={handleUploadStart}
       onUploadComplete={handleUploadComplete}
       onUploadError={handleUploadError}

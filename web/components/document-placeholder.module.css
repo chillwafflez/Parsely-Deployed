@@ -1,3 +1,5 @@
+/* ── Error / not-found panels ──────────────────────────────── */
+
 .panel {
   flex: 1;
   display: flex;
@@ -25,21 +27,6 @@
   line-height: 1.5;
 }
 
-.spinner {
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  border: 2px solid var(--color-line);
-  border-top-color: var(--color-accent);
-  animation: spin 700ms linear infinite;
-}
-
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
 .errIcon {
   color: oklch(0.58 0.17 28);
 }
@@ -60,4 +47,116 @@
 .link:hover {
   background: var(--color-surface-2);
   border-color: color-mix(in oklch, var(--color-accent) 40%, var(--color-line));
+}
+
+/* ── Document page loading skeleton ────────────────────────── */
+
+.skeleton {
+  flex: 1;
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  background: var(--color-bg);
+}
+
+/* Left: document viewer skeleton */
+.skelDocPane {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.skelToolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--color-line);
+  background: var(--color-surface);
+}
+
+.skelToolbarRight {
+  margin-left: auto;
+  display: flex;
+  gap: 6px;
+}
+
+.skelStage {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  justify-content: center;
+  padding: 20px;
+}
+
+/* Fake page: 720px-ish wide to match BASE_PAGE_WIDTH, aspect-ratio for letter
+   so the skeleton roughly matches a loaded PDF page. */
+.skelPage {
+  width: min(720px, 100%);
+  aspect-ratio: 8.5 / 11;
+  background: var(--color-surface);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+  padding: 40px 44px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.skelPageSpacer {
+  height: 12px;
+}
+
+/* Right: Inspector skeleton */
+.skelInspector {
+  width: 400px;
+  flex-shrink: 0;
+  background: var(--color-surface);
+  border-left: 1px solid var(--color-line);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.skelInspectorHeader {
+  padding: 14px 14px 12px;
+  border-bottom: 1px solid var(--color-line);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.skelStats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+
+.skelSearch {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--color-line);
+}
+
+.skelFieldList {
+  flex: 1;
+  overflow: hidden;
+  padding: 6px 0;
+}
+
+.skelFieldRow {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--color-line);
+}
+
+.skelFieldTop {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
 }
