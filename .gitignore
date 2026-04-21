@@ -26,7 +26,7 @@ web/next-env.d.ts
 # IDE
 .idea/
 .vs/
-.claude
+.claude/settings.local.json
 
 # Test samples
 samples/
