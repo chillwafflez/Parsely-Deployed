@@ -22,12 +22,6 @@ export const CONFIDENCE_THRESHOLDS = {
   medium: 0.7,
 } as const;
 
-export function confidenceLevel(confidence: number): "high" | "med" | "low" {
-  if (confidence >= CONFIDENCE_THRESHOLDS.high) return "high";
-  if (confidence >= CONFIDENCE_THRESHOLDS.medium) return "med";
-  return "low";
-}
-
 /**
  * Placeholder template library. In Day 6 these move to the API.
  * Matches the design's TEMPLATES shape for seamless replacement.

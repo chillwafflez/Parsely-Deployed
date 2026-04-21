@@ -26,28 +26,28 @@ export function Sidebar({
     <aside className={styles.sidebar}>
       <div className={styles.nav}>
         <NavItem
-          icon={<FileText size={15} />}
+          icon={<FileText size={17} />}
           label="Parse"
           count={parseCount}
           active={view === "parse"}
           onClick={() => onChangeView("parse")}
         />
         <NavItem
-          icon={<Files size={15} />}
+          icon={<Files size={17} />}
           label="Queue"
           count={queueCount}
           active={view === "queue"}
           onClick={() => onChangeView("queue")}
         />
         <NavItem
-          icon={<LayoutTemplate size={15} />}
+          icon={<LayoutTemplate size={17} />}
           label="Templates"
           count={templates.length}
           active={view === "templates"}
           onClick={() => onChangeView("templates")}
         />
         <NavItem
-          icon={<Settings size={15} />}
+          icon={<Settings size={17} />}
           label="Settings"
           active={view === "settings"}
           onClick={() => onChangeView("settings")}
@@ -57,7 +57,7 @@ export function Sidebar({
       <div className={styles.section}>
         <span>Templates</span>
         <button className={styles.add} title="New template" aria-label="New template">
-          <Plus size={12} />
+          <Plus size={13} />
         </button>
       </div>
 

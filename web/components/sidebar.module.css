@@ -7,18 +7,18 @@
 }
 
 .nav {
-  padding: 10px 8px 6px;
+  padding: 12px 10px 8px;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 3px;
   border-bottom: 1px solid var(--color-line);
 }
 
 .navItem {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 7px 10px;
+  gap: 12px;
+  padding: 9px 12px;
   border-radius: var(--radius-md);
   color: var(--color-ink-2);
   cursor: pointer;
@@ -27,7 +27,7 @@
   border: 0;
   text-align: left;
   font: inherit;
-  font-size: 13px;
+  font-size: 14px;
 }
 
 .navItem:hover {
@@ -46,10 +46,10 @@
 .count {
   margin-left: auto;
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12px;
   color: var(--color-ink-3);
   background: var(--color-surface-2);
-  padding: 1px 6px;
+  padding: 2px 7px;
   border-radius: 4px;
   border: 1px solid var(--color-line);
 }
@@ -61,20 +61,20 @@
 }
 
 .section {
-  padding: 10px 12px 6px;
+  padding: 12px 14px 8px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   color: var(--color-ink-3);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
 
 .add {
-  width: 20px;
-  height: 20px;
+  width: 22px;
+  height: 22px;
   border-radius: 4px;
   border: 1px solid var(--color-line);
   background: var(--color-surface-2);
@@ -106,12 +106,12 @@
   width: 100%;
   border: 1px solid transparent;
   border-radius: var(--radius-md);
-  padding: 8px 10px;
+  padding: 10px 12px;
   cursor: pointer;
   display: flex;
   flex-direction: column;
-  gap: 3px;
-  margin-bottom: 2px;
+  gap: 4px;
+  margin-bottom: 3px;
   background: transparent;
   text-align: left;
   font: inherit;
@@ -135,14 +135,14 @@
 .tplName {
   font-weight: 500;
   color: var(--color-ink);
-  font-size: 12.5px;
+  font-size: 13.5px;
 }
 .tplActive .tplName {
   color: var(--color-accent-ink);
 }
 
 .tplMeta {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--color-ink-3);
   display: flex;
   gap: 8px;

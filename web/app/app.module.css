@@ -1,12 +1,12 @@
 .app {
   display: grid;
-  grid-template-rows: 48px 1fr;
+  grid-template-rows: 56px 1fr;
   height: 100vh;
 }
 
 .body {
   display: grid;
-  grid-template-columns: 248px 1fr;
+  grid-template-columns: 272px 1fr;
   min-height: 0;
 }
 

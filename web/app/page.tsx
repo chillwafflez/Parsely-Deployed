@@ -5,7 +5,7 @@ import { Topbar } from "@/components/topbar";
 import { Sidebar } from "@/components/sidebar";
 import { UploadStage } from "@/components/upload-stage";
 import { ParsingOverlay } from "@/components/parsing-overlay";
-import { ReviewStagePlaceholder } from "@/components/review-stage-placeholder";
+import { ReviewStage } from "@/components/review-stage";
 import { Toast } from "@/components/toast";
 import { PLACEHOLDER_TEMPLATES } from "@/lib/constants";
 import type { AppPhase, DocumentResponse, SidebarView } from "@/lib/types";
@@ -71,9 +71,7 @@ export default function HomePage() {
           {phase === "parsing" && (
             <ParsingOverlay fileName={document?.fileName ?? "document"} />
           )}
-          {phase === "review" && document && (
-            <ReviewStagePlaceholder document={document} onNewUpload={handleNewUpload} />
-          )}
+          {phase === "review" && document && <ReviewStage document={document} />}
         </main>
       </div>
       {toast && <Toast message={toast.message} tone={toast.tone} />}

@@ -1,0 +1,36 @@
+.stage {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  padding: 24px;
+  min-height: 100%;
+}
+
+.pageWrapper {
+  position: relative;
+  box-shadow: var(--shadow-md);
+  border-radius: 2px;
+  background: white;
+  overflow: hidden;
+}
+
+.page {
+  display: block;
+}
+
+.page :global(.react-pdf__Page__canvas) {
+  display: block;
+}
+
+.status,
+.error {
+  padding: 48px 24px;
+  text-align: center;
+  color: var(--color-ink-3);
+  font-size: 13px;
+}
+
+.error {
+  color: var(--color-err);
+}

@@ -28,7 +28,7 @@ export function Topbar({ documentName }: TopbarProps) {
       <div className="flex-1" />
       <span className={styles.env}>local · dev</span>
       <Button variant="ghost" aria-label="Settings">
-        <Settings size={14} />
+        <Settings size={16} />
       </Button>
       <div className={styles.avatar} aria-hidden="true">
         JK

@@ -1,9 +1,9 @@
 .topbar {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 0 14px;
-  height: 48px;
+  gap: 12px;
+  padding: 0 16px;
+  height: 100%;
   border-bottom: 1px solid var(--color-line);
   background: var(--color-surface);
   z-index: 2;
@@ -12,20 +12,21 @@
 .brand {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   font-weight: 600;
+  font-size: 15px;
   letter-spacing: -0.01em;
 }
 
 .mark {
-  width: 22px;
-  height: 22px;
-  border-radius: 5px;
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
   background: linear-gradient(135deg, var(--color-accent) 0%, oklch(0.45 0.16 252) 100%);
   display: grid;
   place-items: center;
   color: white;
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 700;
   box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.15), 0 1px 2px rgba(0, 0, 0, 0.12);
 }
@@ -33,9 +34,9 @@
 .crumbs {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 7px;
   color: var(--color-ink-3);
-  font-size: 12.5px;
+  font-size: 13.5px;
 }
 
 .sep {
@@ -49,21 +50,21 @@
 
 .env {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12px;
   color: var(--color-ink-3);
-  padding: 3px 8px;
+  padding: 4px 10px;
   border: 1px solid var(--color-line);
   border-radius: 999px;
   background: var(--color-surface-2);
 }
 
 .avatar {
-  width: 26px;
-  height: 26px;
+  width: 30px;
+  height: 30px;
   border-radius: 50%;
   background: oklch(0.85 0.04 232);
   color: var(--color-accent-ink);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   display: grid;
   place-items: center;
