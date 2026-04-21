@@ -4,7 +4,7 @@ import * as React from "react";
 import dynamic from "next/dynamic";
 import { FileText, Square, ZoomIn, ZoomOut } from "lucide-react";
 import { Button, Kbd } from "./button";
-import type { ExtractedField } from "@/lib/types";
+import type { DrawResult, ExtractedField } from "@/lib/types";
 import styles from "./document-pane.module.css";
 
 // Dynamically import the PDF rendering module with ssr: false. Per react-pdf
@@ -21,6 +21,7 @@ interface DocumentPaneProps {
   fields: ExtractedField[];
   selectedFieldId: string | null;
   onSelectField: (id: string | null) => void;
+  onDrawComplete: (result: DrawResult) => void;
 }
 
 const ZOOM_STEP = 0.1;
@@ -33,12 +34,47 @@ export function DocumentPane({
   fields,
   selectedFieldId,
   onSelectField,
+  onDrawComplete,
 }: DocumentPaneProps) {
   const [zoom, setZoom] = React.useState(1);
   const [numPages, setNumPages] = React.useState<number | null>(null);
+  const [drawMode, setDrawMode] = React.useState(false);
 
   const zoomOut = () => setZoom((z) => Math.max(ZOOM_MIN, +(z - ZOOM_STEP).toFixed(2)));
   const zoomIn = () => setZoom((z) => Math.min(ZOOM_MAX, +(z + ZOOM_STEP).toFixed(2)));
+
+  const toggleDrawMode = React.useCallback(() => setDrawMode((v) => !v), []);
+
+  // When a drag completes, auto-exit draw mode and bubble the result up.
+  const handleDrawComplete = React.useCallback(
+    (result: DrawResult) => {
+      setDrawMode(false);
+      onDrawComplete(result);
+    },
+    [onDrawComplete]
+  );
+
+  // Keyboard shortcuts: B toggles draw mode, Escape exits it.
+  React.useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLElement) {
+        const editable =
+          e.target.tagName === "INPUT" ||
+          e.target.tagName === "TEXTAREA" ||
+          e.target.isContentEditable;
+        if (editable) return;
+      }
+      if (e.key === "b" || e.key === "B") {
+        e.preventDefault();
+        toggleDrawMode();
+      } else if (e.key === "Escape" && drawMode) {
+        e.preventDefault();
+        setDrawMode(false);
+      }
+    };
+    document.addEventListener("keydown", handler);
+    return () => document.removeEventListener("keydown", handler);
+  }, [drawMode, toggleDrawMode]);
 
   return (
     <section className={styles.pane} aria-label="Document viewer">
@@ -71,10 +107,15 @@ export function DocumentPane({
           <ZoomIn size={14} />
         </Button>
         <div className={styles.divider} />
-        <Button disabled title="Coming in Day 4">
+        <Button
+          active={drawMode}
+          onClick={toggleDrawMode}
+          aria-pressed={drawMode}
+          title={drawMode ? "Exit draw mode (Esc)" : "Draw a new field region (B)"}
+        >
           <Square size={14} />
-          Draw field
-          <Kbd>B</Kbd>
+          {drawMode ? "Cancel draw" : "Draw field"}
+          {!drawMode && <Kbd>B</Kbd>}
         </Button>
       </header>
 
@@ -86,6 +127,8 @@ export function DocumentPane({
           onSelectField={onSelectField}
           zoom={zoom}
           onPagesLoaded={setNumPages}
+          drawMode={drawMode}
+          onDrawComplete={handleDrawComplete}
         />
       </div>
     </section>

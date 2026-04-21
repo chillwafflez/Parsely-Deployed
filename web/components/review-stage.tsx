@@ -3,9 +3,21 @@
 import * as React from "react";
 import { DocumentPane } from "./document-pane";
 import { Inspector } from "./inspector";
+import { NameFieldModal } from "./name-field-modal";
 import { Toast } from "./toast";
-import { fileUrl as apiFileUrl, updateField } from "@/lib/api-client";
-import type { DocumentResponse, ExtractedField, FieldUpdate } from "@/lib/types";
+import {
+  createField,
+  deleteField,
+  fileUrl as apiFileUrl,
+  updateField,
+} from "@/lib/api-client";
+import type {
+  DocumentResponse,
+  DrawResult,
+  ExtractedField,
+  FieldDataType,
+  FieldUpdate,
+} from "@/lib/types";
 import styles from "./review-stage.module.css";
 
 interface ReviewStageProps {
@@ -13,20 +25,21 @@ interface ReviewStageProps {
 }
 
 /**
- * Composes the PDF viewer (left) with the Inspector (right). Owns the
- * selected-field state and document-level mutations. Edits are optimistic:
- * applied locally immediately, rolled back per-field if the server rejects
- * the PATCH.
+ * Composes the PDF viewer (left) with the Inspector (right). Owns document
+ * mutations: edit (PATCH), create via drawn region (POST), delete (DELETE).
+ * Edits + deletes are optimistic with per-operation rollback; create is
+ * pessimistic because the user is already waiting on the modal submission.
  */
 export function ReviewStage({ document: initialDocument }: ReviewStageProps) {
   const [document, setDocument] = React.useState(initialDocument);
   const [selectedFieldId, setSelectedFieldId] = React.useState<string | null>(null);
+  const [pendingDraw, setPendingDraw] = React.useState<DrawResult | null>(null);
   const [toast, setToast] = React.useState<{ message: string; tone: "ok" | "err" } | null>(null);
 
-  // Sync local state if the parent swaps in a different document entirely.
   React.useEffect(() => {
     setDocument(initialDocument);
     setSelectedFieldId(null);
+    setPendingDraw(null);
   }, [initialDocument]);
 
   const pdfUrl = React.useMemo(() => apiFileUrl(document.id), [document.id]);
@@ -36,7 +49,8 @@ export function ReviewStage({ document: initialDocument }: ReviewStageProps) {
     window.setTimeout(() => setToast(null), 2400);
   }, []);
 
-  const applyOptimistic = React.useCallback(
+  /** Apply a field mutation optimistically; returns a rollback closure. */
+  const applyOptimisticUpdate = React.useCallback(
     (fieldId: string, mutate: (f: ExtractedField) => ExtractedField) => {
       let previous: ExtractedField | null = null;
       setDocument((prev) => {
@@ -60,7 +74,7 @@ export function ReviewStage({ document: initialDocument }: ReviewStageProps) {
 
   const handleUpdateField = React.useCallback(
     async (fieldId: string, update: FieldUpdate) => {
-      const rollback = applyOptimistic(fieldId, (f) => ({
+      const rollback = applyOptimisticUpdate(fieldId, (f) => ({
         ...f,
         ...(update.value !== undefined ? { value: update.value } : {}),
         ...(update.dataType !== undefined ? { dataType: update.dataType } : {}),
@@ -70,7 +84,6 @@ export function ReviewStage({ document: initialDocument }: ReviewStageProps) {
 
       try {
         const saved = await updateField(document.id, fieldId, update);
-        // Reconcile with the server's authoritative copy (timestamps, etc.).
         setDocument((prev) => ({
           ...prev,
           fields: prev.fields.map((f) => (f.id === fieldId ? saved : f)),
@@ -80,18 +93,69 @@ export function ReviewStage({ document: initialDocument }: ReviewStageProps) {
         showToast(err instanceof Error ? err.message : "Save failed", "err");
       }
     },
-    [applyOptimistic, document.id, showToast]
+    [applyOptimisticUpdate, document.id, showToast]
   );
 
   const handleDeleteField = React.useCallback(
-    (fieldId: string) => {
-      // Day 5 wires a real DELETE endpoint. Until then, no-op with a toast
-      // so the UX is obvious rather than broken.
-      showToast("Field delete lands in Day 5", "err");
-      // Swallow the id so linters don't complain about unused parameters.
-      void fieldId;
+    async (fieldId: string) => {
+      let removed: ExtractedField | null = null;
+      let removedIndex = -1;
+
+      setDocument((prev) => {
+        removedIndex = prev.fields.findIndex((f) => f.id === fieldId);
+        if (removedIndex >= 0) removed = prev.fields[removedIndex];
+        return { ...prev, fields: prev.fields.filter((f) => f.id !== fieldId) };
+      });
+
+      if (selectedFieldId === fieldId) setSelectedFieldId(null);
+
+      try {
+        await deleteField(document.id, fieldId);
+        showToast("Field removed");
+      } catch (err) {
+        if (removed && removedIndex >= 0) {
+          const restore = removed;
+          const index = removedIndex;
+          setDocument((prev) => {
+            const fields = [...prev.fields];
+            fields.splice(index, 0, restore);
+            return { ...prev, fields };
+          });
+        }
+        showToast(err instanceof Error ? err.message : "Delete failed", "err");
+      }
     },
-    [showToast]
+    [document.id, selectedFieldId, showToast]
+  );
+
+  const handleDrawComplete = React.useCallback((result: DrawResult) => {
+    setPendingDraw(result);
+  }, []);
+
+  const handleCancelDraw = React.useCallback(() => {
+    setPendingDraw(null);
+  }, []);
+
+  const handleSubmitDraw = React.useCallback(
+    async (draft: { name: string; dataType: FieldDataType; isRequired: boolean }) => {
+      if (!pendingDraw) return;
+      try {
+        const created = await createField(document.id, {
+          name: draft.name,
+          dataType: draft.dataType,
+          isRequired: draft.isRequired,
+          pageNumber: pendingDraw.pageNumber,
+          polygon: pendingDraw.polygon,
+        });
+        setDocument((prev) => ({ ...prev, fields: [...prev.fields, created] }));
+        setSelectedFieldId(created.id);
+        setPendingDraw(null);
+        showToast(`Field added — AI will learn this region`);
+      } catch (err) {
+        showToast(err instanceof Error ? err.message : "Create failed", "err");
+      }
+    },
+    [document.id, pendingDraw, showToast]
   );
 
   const handleSaveTemplate = React.useCallback(() => {
@@ -106,6 +170,7 @@ export function ReviewStage({ document: initialDocument }: ReviewStageProps) {
         fields={document.fields}
         selectedFieldId={selectedFieldId}
         onSelectField={setSelectedFieldId}
+        onDrawComplete={handleDrawComplete}
       />
       <Inspector
         fields={document.fields}
@@ -115,6 +180,13 @@ export function ReviewStage({ document: initialDocument }: ReviewStageProps) {
         onDeleteField={handleDeleteField}
         onSaveTemplate={handleSaveTemplate}
       />
+      {pendingDraw && (
+        <NameFieldModal
+          bbox={pendingDraw.bbox}
+          onCancel={handleCancelDraw}
+          onSubmit={handleSubmitDraw}
+        />
+      )}
       {toast && <Toast message={toast.message} tone={toast.tone} />}
     </div>
   );

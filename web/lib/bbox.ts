@@ -1,4 +1,9 @@
-import type { BoundingRegion, ConfidenceLevel, ExtractedField } from "./types";
+import type {
+  BoundingRegion,
+  ConfidenceLevel,
+  DrawnRect,
+  ExtractedField,
+} from "./types";
 import { CONFIDENCE_THRESHOLDS } from "./constants";
 
 /** Axis-aligned bounding rectangle in page-percent coordinates. */
@@ -65,4 +70,26 @@ export function confidenceLevel(confidence: number): ConfidenceLevel {
   if (confidence >= CONFIDENCE_THRESHOLDS.high) return "high";
   if (confidence >= CONFIDENCE_THRESHOLDS.medium) return "med";
   return "low";
+}
+
+/**
+ * Inverse of polygonToPercentBBox — converts a user-drawn rectangle in
+ * page-percent coordinates to an 8-value polygon in inches (the format
+ * Azure DI uses). Produces an axis-aligned quadrilateral with corners
+ * ordered top-left, top-right, bottom-right, bottom-left.
+ */
+export function percentBBoxToPolygonInches(
+  bbox: DrawnRect,
+  pageWidthPoints: number,
+  pageHeightPoints: number
+): number[] {
+  const pageWidthInches = pageWidthPoints / 72;
+  const pageHeightInches = pageHeightPoints / 72;
+
+  const xLeft = (bbox.x / 100) * pageWidthInches;
+  const xRight = ((bbox.x + bbox.w) / 100) * pageWidthInches;
+  const yTop = (bbox.y / 100) * pageHeightInches;
+  const yBottom = ((bbox.y + bbox.h) / 100) * pageHeightInches;
+
+  return [xLeft, yTop, xRight, yTop, xRight, yBottom, xLeft, yBottom];
 }

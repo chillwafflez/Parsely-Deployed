@@ -17,5 +17,11 @@ public class ExtractedField
     public bool IsCorrected { get; set; }
     public DateTime? CorrectedAt { get; set; }
 
+    /// <summary>
+    /// True if the user drew this field manually (not extracted by Azure DI).
+    /// Used to route user-added fields into the Inspector's "Custom" group.
+    /// </summary>
+    public bool IsUserAdded { get; set; }
+
     public Document Document { get; set; } = null!;
 }

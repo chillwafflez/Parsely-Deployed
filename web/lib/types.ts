@@ -42,6 +42,7 @@ export interface ExtractedField {
   confidence: number;
   isRequired: boolean;
   isCorrected: boolean;
+  isUserAdded: boolean;
   boundingRegions: BoundingRegion[];
 }
 
@@ -50,6 +51,31 @@ export interface FieldUpdate {
   value?: string;
   dataType?: string;
   isRequired?: boolean;
+}
+
+/** Payload for POSTing a new user-drawn field. */
+export interface FieldCreate {
+  name: string;
+  dataType: string;
+  isRequired: boolean;
+  pageNumber: number;
+  /** Flat [x1,y1,x2,y2,x3,y3,x4,y4] in inches, matching Azure DI's format. */
+  polygon: number[];
+}
+
+/** A rectangle drawn by the user, in percentages of the page. */
+export interface DrawnRect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+/** Result bubbled up from the drawing layer when a user finishes dragging. */
+export interface DrawResult {
+  pageNumber: number;
+  bbox: DrawnRect;
+  polygon: number[];
 }
 
 export interface DocumentResponse {

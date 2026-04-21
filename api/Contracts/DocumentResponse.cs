@@ -35,6 +35,7 @@ public record ExtractedFieldResponse(
     float Confidence,
     bool IsRequired,
     bool IsCorrected,
+    bool IsUserAdded,
     IReadOnlyList<BoundingRegionResponse> BoundingRegions)
 {
     public static ExtractedFieldResponse FromEntity(ExtractedField f)
@@ -52,6 +53,7 @@ public record ExtractedFieldResponse(
             Confidence: f.Confidence,
             IsRequired: f.IsRequired,
             IsCorrected: f.IsCorrected,
+            IsUserAdded: f.IsUserAdded,
             BoundingRegions: regions);
     }
 }

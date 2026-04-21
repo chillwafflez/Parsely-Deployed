@@ -126,6 +126,63 @@ public class DocumentsController(
         return Ok(DocumentResponse.FromEntity(document));
     }
 
+    [HttpPost("{documentId:guid}/fields")]
+    public async Task<ActionResult<ExtractedFieldResponse>> CreateField(
+        Guid documentId,
+        [FromBody] CreateFieldRequest request,
+        CancellationToken ct)
+    {
+        if (!ModelState.IsValid) return ValidationProblem(ModelState);
+
+        var documentExists = await db.Documents.AnyAsync(d => d.Id == documentId, ct);
+        if (!documentExists) return NotFound();
+
+        var boundingRegions = new[]
+        {
+            new BoundingRegionResponse(request.PageNumber, request.Polygon.ToArray()),
+        };
+
+        var field = new ExtractedField
+        {
+            Id = Guid.NewGuid(),
+            DocumentId = documentId,
+            Name = request.Name.Trim(),
+            Value = null,
+            DataType = request.DataType,
+            Confidence = 1.0f,
+            IsRequired = request.IsRequired,
+            IsCorrected = true,
+            CorrectedAt = DateTime.UtcNow,
+            IsUserAdded = true,
+            BoundingRegionsJson = JsonSerializer.Serialize(boundingRegions),
+        };
+
+        db.ExtractedFields.Add(field);
+        await db.SaveChangesAsync(ct);
+
+        return CreatedAtAction(
+            actionName: nameof(Get),
+            routeValues: new { id = documentId },
+            value: ExtractedFieldResponse.FromEntity(field));
+    }
+
+    [HttpDelete("{documentId:guid}/fields/{fieldId:guid}")]
+    public async Task<IActionResult> DeleteField(
+        Guid documentId,
+        Guid fieldId,
+        CancellationToken ct)
+    {
+        var field = await db.ExtractedFields
+            .FirstOrDefaultAsync(f => f.Id == fieldId && f.DocumentId == documentId, ct);
+
+        if (field is null) return NotFound();
+
+        db.ExtractedFields.Remove(field);
+        await db.SaveChangesAsync(ct);
+
+        return NoContent();
+    }
+
     [HttpPatch("{documentId:guid}/fields/{fieldId:guid}")]
     public async Task<ActionResult<ExtractedFieldResponse>> UpdateField(
         Guid documentId,

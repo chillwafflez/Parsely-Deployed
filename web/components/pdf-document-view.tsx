@@ -5,8 +5,9 @@ import { Document, Page, pdfjs } from "react-pdf";
 import "react-pdf/dist/Page/AnnotationLayer.css";
 import "react-pdf/dist/Page/TextLayer.css";
 import type { PDFPageProxy } from "pdfjs-dist";
-import type { ExtractedField } from "@/lib/types";
+import type { DrawResult, ExtractedField } from "@/lib/types";
 import { BoundingBoxOverlay } from "./bounding-box-overlay";
+import { DrawingLayer } from "./drawing-layer";
 import styles from "./pdf-document-view.module.css";
 
 /**
@@ -27,6 +28,8 @@ interface PdfDocumentViewProps {
   onSelectField: (id: string | null) => void;
   zoom: number;
   onPagesLoaded?: (count: number) => void;
+  drawMode: boolean;
+  onDrawComplete: (result: DrawResult) => void;
 }
 
 interface PageDimensions {
@@ -43,6 +46,8 @@ export default function PdfDocumentView({
   onSelectField,
   zoom,
   onPagesLoaded,
+  drawMode,
+  onDrawComplete,
 }: PdfDocumentViewProps) {
   const [numPages, setNumPages] = React.useState(0);
   const [pageDims, setPageDims] = React.useState<Map<number, PageDimensions>>(
@@ -99,7 +104,7 @@ export default function PdfDocumentView({
                 renderAnnotationLayer={false}
                 className={styles.page}
               />
-              {dims && (
+              {dims && !drawMode && (
                 <BoundingBoxOverlay
                   pageNumber={pageNumber}
                   pageWidthPoints={dims.widthPoints}
@@ -107,6 +112,14 @@ export default function PdfDocumentView({
                   fields={fields}
                   selectedFieldId={selectedFieldId}
                   onSelectField={onSelectField}
+                />
+              )}
+              {dims && drawMode && (
+                <DrawingLayer
+                  pageNumber={pageNumber}
+                  pageWidthPoints={dims.widthPoints}
+                  pageHeightPoints={dims.heightPoints}
+                  onDrawComplete={onDrawComplete}
                 />
               )}
             </div>

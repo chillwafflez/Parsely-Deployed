@@ -6,19 +6,19 @@ export const FIELD_GROUPS = ["Document", "Parties", "Totals", "Line Items", "Cus
 export type FieldGroup = (typeof FIELD_GROUPS)[number];
 
 /**
- * Maps an Azure DI prebuilt-invoice field name to a display group using
- * substring heuristics. Covers the common field taxonomy:
+ * Maps a field to a display group. User-added fields always land in "Custom".
+ * For AI-extracted fields we use substring heuristics against Azure DI's
+ * prebuilt-invoice vocabulary:
  *
  *   Parties  → Vendor*, Customer*, *Address*, *Recipient*, BillTo*, ShipTo*, Remit*
  *   Totals   → *Total*, *Tax*, SubTotal, AmountDue, PreviousUnpaidBalance, Discount
  *   Line Items → exactly "Items"
  *   Document → everything else (InvoiceId, InvoiceDate, DueDate, PurchaseOrder,
  *              PaymentTerm, Service*Date, etc.)
- *
- * User-added custom fields (coming in Day 5) will bypass this and be tagged
- * "Custom" explicitly.
  */
-export function inferFieldGroup(name: string): FieldGroup {
+export function inferFieldGroup(name: string, isUserAdded = false): FieldGroup {
+  if (isUserAdded) return "Custom";
+
   const n = name.toLowerCase();
 
   if (n === "items") return "Line Items";
@@ -61,7 +61,7 @@ export function groupFields(
   }
 
   for (const field of fields) {
-    const group = inferFieldGroup(field.name);
+    const group = inferFieldGroup(field.name, field.isUserAdded);
     grouped.get(group)!.push(field);
   }
 

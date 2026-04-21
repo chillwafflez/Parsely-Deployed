@@ -2,6 +2,7 @@ import type {
   DocumentResponse,
   DocumentSummary,
   ExtractedField,
+  FieldCreate,
   FieldUpdate,
 } from "./types";
 
@@ -61,4 +62,37 @@ export async function updateField(
   }
 
   return res.json();
+}
+
+export async function createField(
+  documentId: string,
+  payload: FieldCreate
+): Promise<ExtractedField> {
+  const res = await fetch(`${API_BASE}/api/documents/${documentId}/fields`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`Create failed (${res.status}): ${body || res.statusText}`);
+  }
+
+  return res.json();
+}
+
+export async function deleteField(
+  documentId: string,
+  fieldId: string
+): Promise<void> {
+  const res = await fetch(
+    `${API_BASE}/api/documents/${documentId}/fields/${fieldId}`,
+    { method: "DELETE" }
+  );
+
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`Delete failed (${res.status}): ${body || res.statusText}`);
+  }
 }
