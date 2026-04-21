@@ -40,8 +40,16 @@ export interface ExtractedField {
   value: string | null;
   dataType: string;
   confidence: number;
+  isRequired: boolean;
   isCorrected: boolean;
   boundingRegions: BoundingRegion[];
+}
+
+/** PATCH body for updating a field. Only provided properties are applied. */
+export interface FieldUpdate {
+  value?: string;
+  dataType?: string;
+  isRequired?: boolean;
 }
 
 export interface DocumentResponse {

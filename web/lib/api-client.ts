@@ -1,4 +1,9 @@
-import type { DocumentResponse, DocumentSummary } from "./types";
+import type {
+  DocumentResponse,
+  DocumentSummary,
+  ExtractedField,
+  FieldUpdate,
+} from "./types";
 
 const API_BASE =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:5180";
@@ -34,4 +39,26 @@ export async function getDocument(id: string): Promise<DocumentResponse> {
 
 export function fileUrl(id: string): string {
   return `${API_BASE}/api/documents/${id}/file`;
+}
+
+export async function updateField(
+  documentId: string,
+  fieldId: string,
+  update: FieldUpdate
+): Promise<ExtractedField> {
+  const res = await fetch(
+    `${API_BASE}/api/documents/${documentId}/fields/${fieldId}`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(update),
+    }
+  );
+
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`Update failed (${res.status}): ${body || res.statusText}`);
+  }
+
+  return res.json();
 }

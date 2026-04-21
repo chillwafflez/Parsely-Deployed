@@ -33,6 +33,7 @@ public record ExtractedFieldResponse(
     string? Value,
     string DataType,
     float Confidence,
+    bool IsRequired,
     bool IsCorrected,
     IReadOnlyList<BoundingRegionResponse> BoundingRegions)
 {
@@ -49,6 +50,7 @@ public record ExtractedFieldResponse(
             Value: f.Value,
             DataType: f.DataType,
             Confidence: f.Confidence,
+            IsRequired: f.IsRequired,
             IsCorrected: f.IsCorrected,
             BoundingRegions: regions);
     }

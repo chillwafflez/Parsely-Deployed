@@ -126,6 +126,48 @@ public class DocumentsController(
         return Ok(DocumentResponse.FromEntity(document));
     }
 
+    [HttpPatch("{documentId:guid}/fields/{fieldId:guid}")]
+    public async Task<ActionResult<ExtractedFieldResponse>> UpdateField(
+        Guid documentId,
+        Guid fieldId,
+        [FromBody] UpdateFieldRequest update,
+        CancellationToken ct)
+    {
+        var field = await db.ExtractedFields
+            .FirstOrDefaultAsync(f => f.Id == fieldId && f.DocumentId == documentId, ct);
+
+        if (field is null) return NotFound();
+
+        var changed = false;
+
+        if (update.Value is not null && update.Value != field.Value)
+        {
+            field.Value = update.Value;
+            changed = true;
+        }
+
+        if (!string.IsNullOrWhiteSpace(update.DataType) && update.DataType != field.DataType)
+        {
+            field.DataType = update.DataType;
+            changed = true;
+        }
+
+        if (update.IsRequired is bool required && required != field.IsRequired)
+        {
+            field.IsRequired = required;
+            changed = true;
+        }
+
+        if (changed)
+        {
+            field.IsCorrected = true;
+            field.CorrectedAt = DateTime.UtcNow;
+            await db.SaveChangesAsync(ct);
+        }
+
+        return Ok(ExtractedFieldResponse.FromEntity(field));
+    }
+
     private static string GuessContentType(string fileName) => Path.GetExtension(fileName).ToLowerInvariant() switch
     {
         ".pdf" => "application/pdf",

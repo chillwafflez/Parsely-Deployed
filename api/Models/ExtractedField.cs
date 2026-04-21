@@ -12,6 +12,8 @@ public class ExtractedField
 
     public string? BoundingRegionsJson { get; set; }
 
+    public bool IsRequired { get; set; }
+
     public bool IsCorrected { get; set; }
     public DateTime? CorrectedAt { get; set; }
 
