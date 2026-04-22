@@ -1,5 +1,6 @@
 "use client";
 
+import * as React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -8,11 +9,15 @@ import {
   LayoutTemplate,
   Plus,
   Settings,
+  Trash2,
   Upload,
 } from "lucide-react";
 import type { TemplateSummary } from "@/lib/types";
 import { cn } from "@/lib/cn";
 import { formatRelativeTime } from "@/lib/format";
+import { useAppShell } from "@/lib/app-shell-context";
+import { deleteTemplate } from "@/lib/api-client";
+import { DeleteTemplateModal } from "./delete-template-modal";
 import { Skeleton } from "./skeleton";
 import styles from "./sidebar.module.css";
 
@@ -36,6 +41,28 @@ export function Sidebar({
   queueCount,
 }: SidebarProps) {
   const pathname = usePathname();
+  const { showToast, refreshTemplates } = useAppShell();
+  const [pendingDelete, setPendingDelete] = React.useState<TemplateSummary | null>(null);
+
+  const handleConfirmDelete = React.useCallback(async () => {
+    if (!pendingDelete) return;
+    const target = pendingDelete;
+    try {
+      await deleteTemplate(target.id);
+      // Close modal before refetch so the UI reacts immediately — the
+      // refresh below re-syncs the sidebar list with the server.
+      setPendingDelete(null);
+      await refreshTemplates();
+      showToast(`Template removed · ${target.name}`);
+    } catch (err) {
+      showToast(
+        err instanceof Error ? err.message : "Failed to delete template",
+        "err"
+      );
+      // Keep the modal open so the user can retry or cancel explicitly.
+      throw err;
+    }
+  }, [pendingDelete, refreshTemplates, showToast]);
 
   return (
     <aside className={styles.sidebar}>
@@ -52,8 +79,6 @@ export function Sidebar({
           icon={<History size={17} />}
           label="Documents"
           count={documentsCount}
-          // Active on /documents and the /documents/[id] detail view so the
-          // user has a clear "you're inside the documents section" signal.
           active={pathname.startsWith("/documents")}
         />
         <NavButtonPlaceholder
@@ -94,26 +119,80 @@ export function Sidebar({
           <p className={styles.empty}>No templates yet. Save one after reviewing a parse.</p>
         ) : (
           templates.map((t) => (
-            <button
+            <TemplateCard
               key={t.id}
-              type="button"
-              className={cn(styles.tpl, t.id === activeTemplateId && styles.tplActive)}
-              onClick={() => onPickTemplate(t.id)}
-            >
-              <div className={styles.tplRow}>
-                <span className={styles.tplName}>{t.name}</span>
-                <span className={styles.dot} title="active" />
-              </div>
-              <div className={styles.tplMeta}>
-                <span>{t.kind}</span>
-                <span className={styles.mono}>· {t.runs} runs</span>
-                <span className={styles.tplTime}>{formatRelativeTime(t.createdAt)}</span>
-              </div>
-            </button>
+              template={t}
+              active={t.id === activeTemplateId}
+              onPick={() => onPickTemplate(t.id)}
+              onRequestDelete={() => setPendingDelete(t)}
+            />
           ))
         )}
       </div>
+
+      {pendingDelete && (
+        <DeleteTemplateModal
+          templateName={pendingDelete.name}
+          runs={pendingDelete.runs}
+          onCancel={() => setPendingDelete(null)}
+          onConfirm={handleConfirmDelete}
+        />
+      )}
     </aside>
+  );
+}
+
+interface TemplateCardProps {
+  template: TemplateSummary;
+  active: boolean;
+  onPick: () => void;
+  onRequestDelete: () => void;
+}
+
+/**
+ * Template card with a hover-revealed delete action. The card body is a
+ * `role="button"` div (not a `<button>`) so we can nest the trash
+ * `<button>` without producing invalid HTML.
+ */
+function TemplateCard({ template, active, onPick, onRequestDelete }: TemplateCardProps) {
+  const handleKey = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      onPick();
+    }
+  };
+
+  const handleDeleteClick = (e: React.MouseEvent<HTMLButtonElement>) => {
+    e.stopPropagation();
+    onRequestDelete();
+  };
+
+  return (
+    <div
+      className={cn(styles.tpl, active && styles.tplActive)}
+      role="button"
+      tabIndex={0}
+      onClick={onPick}
+      onKeyDown={handleKey}
+    >
+      <div className={styles.tplRow}>
+        <span className={styles.tplName}>{template.name}</span>
+        <button
+          type="button"
+          className={styles.tplDelete}
+          title="Delete template"
+          aria-label={`Delete template ${template.name}`}
+          onClick={handleDeleteClick}
+        >
+          <Trash2 size={13} aria-hidden="true" />
+        </button>
+      </div>
+      <div className={styles.tplMeta}>
+        <span>{template.kind}</span>
+        <span className={styles.mono}>· {template.runs} runs</span>
+        <span className={styles.tplTime}>{formatRelativeTime(template.createdAt)}</span>
+      </div>
+    </div>
   );
 }
 

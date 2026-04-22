@@ -1,0 +1,136 @@
+.scrim {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.32);
+  display: grid;
+  place-items: center;
+  z-index: 100;
+  animation: fade 0.15s ease;
+}
+
+@keyframes fade {
+  from {
+    opacity: 0;
+  }
+}
+
+.modal {
+  width: 460px;
+  max-width: 92vw;
+  background: var(--color-surface);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+  animation: pop 0.16s ease;
+}
+
+@keyframes pop {
+  from {
+    transform: translateY(4px) scale(0.98);
+    opacity: 0;
+  }
+}
+
+.head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 18px 20px 10px;
+}
+
+.headIcon {
+  flex-shrink: 0;
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  background: var(--color-err-weak);
+  color: var(--color-err);
+  display: grid;
+  place-items: center;
+  margin-top: 1px;
+}
+
+.headText h2 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--color-ink);
+}
+
+.headText h2 b {
+  color: var(--color-ink);
+}
+
+.headText p {
+  margin: 4px 0 0;
+  color: var(--color-ink-3);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.body {
+  padding: 4px 20px 16px;
+}
+
+.impact {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 12px;
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-md);
+  font-size: 12.5px;
+  color: var(--color-ink-2);
+  line-height: 1.5;
+}
+
+.impact b {
+  color: var(--color-ink);
+  font-weight: 600;
+}
+
+.foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: flex-end;
+  padding: 12px 20px;
+  background: var(--color-surface-2);
+  border-top: 1px solid var(--color-line);
+}
+
+/* Solid red danger button for the destructive primary action */
+.dangerBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid color-mix(in oklab, var(--color-err) 60%, black);
+  background: var(--color-err);
+  color: white;
+  cursor: pointer;
+  font-weight: 500;
+  font-size: 12.5px;
+  font-family: inherit;
+  transition: background 0.1s, border-color 0.1s;
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+
+.dangerBtn:hover:not(:disabled) {
+  background: color-mix(in oklab, var(--color-err) 88%, black);
+  border-color: color-mix(in oklab, var(--color-err) 50%, black);
+}
+
+.dangerBtn:focus-visible {
+  outline: 2px solid var(--color-err);
+  outline-offset: 2px;
+}
+
+.dangerBtn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
