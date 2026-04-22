@@ -93,3 +93,53 @@ export function percentBBoxToPolygonInches(
 
   return [xLeft, yTop, xRight, yTop, xRight, yBottom, xLeft, yBottom];
 }
+
+/** Axis-aligned rectangle in pdf-lib coordinates (points, bottom-left origin). */
+export interface BBoxPdfPoints {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/**
+ * Converts an Azure DI polygon (inches, top-left origin) into a rectangle
+ * in pdf-lib coordinates (points, bottom-left origin).
+ *
+ * Two conversions in one step — getting either wrong is the single most
+ * common bug when overlaying on a PDF:
+ *   1. inches → points: multiply by 72
+ *   2. top-left Y → bottom-left Y: pageHeight - (yTopInches * 72)
+ *
+ * Azure returns a 4-corner polygon that may be slightly non-rectangular;
+ * we take the axis-aligned bounding box to keep rendering simple.
+ */
+export function polygonInchesToPdfPoints(
+  polygon: number[],
+  pagePointsHeight: number
+): BBoxPdfPoints | null {
+  if (polygon.length < 8 || pagePointsHeight <= 0) return null;
+
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minY = Infinity;
+  let maxY = -Infinity;
+
+  for (let i = 0; i < polygon.length; i += 2) {
+    const x = polygon[i];
+    const y = polygon[i + 1];
+    if (x < minX) minX = x;
+    if (x > maxX) maxX = x;
+    if (y < minY) minY = y;
+    if (y > maxY) maxY = y;
+  }
+
+  return {
+    x: minX * 72,
+    // maxY is the visual-bottom in Azure's top-left-origin inches; flip to
+    // pdf-lib's bottom-left origin by subtracting from page height.
+    y: pagePointsHeight - maxY * 72,
+    width: (maxX - minX) * 72,
+    height: (maxY - minY) * 72,
+  };
+}

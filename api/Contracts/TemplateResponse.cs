@@ -47,6 +47,8 @@ public record TemplateFieldRuleResponse(
     string Name,
     string DataType,
     bool IsRequired,
+    string? Hint,
+    IReadOnlyList<string> Aliases,
     IReadOnlyList<BoundingRegionResponse> BoundingRegions)
 {
     public static TemplateFieldRuleResponse FromEntity(TemplateFieldRule rule)
@@ -61,13 +63,25 @@ public record TemplateFieldRuleResponse(
             Name: rule.Name,
             DataType: rule.DataType,
             IsRequired: rule.IsRequired,
+            Hint: rule.Hint,
+            Aliases: rule.GetAliases(),
             BoundingRegions: regions);
     }
 }
+
+/// <summary>
+/// Optional voice-fill overrides the user can supply per captured rule
+/// when saving a template. Keyed by the rule's field name in
+/// <see cref="CreateTemplateRequest.RuleOverrides"/>.
+/// </summary>
+public record RuleOverride(
+    [StringLength(200)] string? Hint,
+    IReadOnlyList<string>? Aliases);
 
 public record CreateTemplateRequest(
     [Required, StringLength(256, MinimumLength = 1)] string Name,
     [Required, StringLength(64, MinimumLength = 1)] string Kind,
     [StringLength(2048)] string? Description,
     [Required, RegularExpression("^(vendor|similar|all)$")] string ApplyTo,
-    [Required] Guid SourceDocumentId);
+    [Required] Guid SourceDocumentId,
+    IDictionary<string, RuleOverride>? RuleOverrides = null);

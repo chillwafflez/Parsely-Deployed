@@ -8,6 +8,7 @@ All-in-one document parsing SaaS with a **correction + save-as-template** workfl
 2. **`context/PROJECT_CONTEXT.md`** — full architecture, day-by-day build log, gotchas, and roadmap. The other Claude session keeps this current.
 3. **`memory/MEMORY.md`** — persisted user and project memories.
 4. Code.
+5. **`context/VOICE_FEATURE.md`** — For voice-fill feature implementation details
 
 If `PROJECT_CONTEXT.md` and this file disagree, `PROJECT_CONTEXT.md` wins — it's the living document.
 

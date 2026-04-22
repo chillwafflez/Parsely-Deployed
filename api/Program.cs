@@ -6,11 +6,18 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddControllers();
 builder.Services.AddOpenApi();
+builder.Services.AddHttpClient();
 
 builder.Services.Configure<DocumentIntelligenceOptions>(
     builder.Configuration.GetSection(DocumentIntelligenceOptions.SectionName));
+builder.Services.Configure<SpeechOptions>(
+    builder.Configuration.GetSection(SpeechOptions.SectionName));
+builder.Services.Configure<OpenAIOptions>(
+    builder.Configuration.GetSection(OpenAIOptions.SectionName));
 
 builder.Services.AddSingleton<IDocumentIntelligenceService, DocumentIntelligenceService>();
+builder.Services.AddSingleton<ISpeechTokenProvider, SpeechTokenProvider>();
+builder.Services.AddSingleton<IVoiceFillService, VoiceFillService>();
 
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseSqlite(builder.Configuration.GetConnectionString("Default")

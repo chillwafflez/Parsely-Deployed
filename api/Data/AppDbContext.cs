@@ -61,6 +61,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             entity.HasKey(r => r.Id);
             entity.Property(r => r.Name).HasMaxLength(256).IsRequired();
             entity.Property(r => r.DataType).HasMaxLength(64).IsRequired();
+            entity.Property(r => r.Hint).HasMaxLength(200);
 
             entity.HasOne(r => r.Template)
                   .WithMany(t => t.Rules)

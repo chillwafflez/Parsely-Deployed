@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { useRouter } from "next/navigation";
 import { Topbar } from "./topbar";
 import { Sidebar } from "./sidebar";
 import { Toast } from "../ui/toast";
@@ -23,6 +24,7 @@ interface ToastState {
  * single toast instance — pages drive all three via `useAppShell()`.
  */
 export function AppShell({ children }: { children: React.ReactNode }) {
+  const router = useRouter();
   const [activeDocument, setActiveDocument] =
     React.useState<DocumentResponse | null>(null);
   const [toast, setToast] = React.useState<ToastState | null>(null);
@@ -35,6 +37,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     loading: templatesLoading,
     refresh: refreshTemplates,
   } = useTemplates();
+
+  const handlePickTemplate = React.useCallback(
+    (id: string) => {
+      router.push(`/templates/${id}/new`);
+    },
+    [router]
+  );
 
   const showToast = React.useCallback((message: string, tone: ToastTone = "ok") => {
     const id = ++toastSeqRef.current;
@@ -74,9 +83,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <Sidebar
             templates={templates}
             activeTemplateId={activeDocument?.templateId ?? null}
-            onPickTemplate={() => {
-              /* Sidebar template selection is a Phase 2 feature. */
-            }}
+            onPickTemplate={handlePickTemplate}
             templatesLoading={templatesLoading}
             parseCount={activeDocument ? 1 : 0}
             queueCount={0}

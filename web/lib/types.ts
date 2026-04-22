@@ -144,10 +144,23 @@ export interface TemplateFieldRule {
   name: string;
   dataType: string;
   isRequired: boolean;
+  /** Free-text description shown to the voice-fill LLM (≤200 chars). */
+  hint: string | null;
+  /** Alternative phrasings the user might say for this field. */
+  aliases: string[];
   boundingRegions: BoundingRegion[];
 }
 
 export type TemplateApplyTo = "vendor" | "similar" | "all";
+
+/**
+ * Optional voice-fill metadata captured per rule at template-save time.
+ * Keyed by the rule's field name (case-insensitive on the server).
+ */
+export interface RuleOverride {
+  hint: string | null;
+  aliases: string[];
+}
 
 /** POST body for creating a template from a source document. */
 export interface CreateTemplatePayload {
@@ -156,4 +169,5 @@ export interface CreateTemplatePayload {
   description: string | null;
   applyTo: TemplateApplyTo;
   sourceDocumentId: string;
+  ruleOverrides?: Record<string, RuleOverride>;
 }

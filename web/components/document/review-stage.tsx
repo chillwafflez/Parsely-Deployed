@@ -19,6 +19,7 @@ import type {
   ExtractedField,
   FieldDataType,
   FieldUpdate,
+  RuleOverride,
   TemplateApplyTo,
 } from "@/lib/types";
 
@@ -169,6 +170,7 @@ export function ReviewStage({ document, onDocumentChange }: ReviewStageProps) {
       kind: string;
       description: string;
       applyTo: TemplateApplyTo;
+      ruleOverrides?: Record<string, RuleOverride>;
     }) => {
       try {
         const template = await createTemplate({
@@ -177,6 +179,7 @@ export function ReviewStage({ document, onDocumentChange }: ReviewStageProps) {
           description: draft.description || null,
           applyTo: draft.applyTo,
           sourceDocumentId: document.id,
+          ruleOverrides: draft.ruleOverrides,
         });
         onDocumentChange((prev) => ({
           ...prev,

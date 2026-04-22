@@ -66,6 +66,13 @@ public class TemplatesController(AppDbContext db, ILogger<TemplatesController> l
                 !string.IsNullOrWhiteSpace(f.Value))
             ?.Value?.Trim();
 
+        // Overrides arrive keyed by field name; swap to a case-insensitive
+        // lookup so minor casing drift (e.g. "vendorname" vs "VendorName")
+        // doesn't silently drop the user's hint/aliases.
+        var overrides = request.RuleOverrides is null
+            ? new Dictionary<string, RuleOverride>(StringComparer.OrdinalIgnoreCase)
+            : new Dictionary<string, RuleOverride>(request.RuleOverrides, StringComparer.OrdinalIgnoreCase);
+
         var template = new Template
         {
             Id = Guid.NewGuid(),
@@ -77,13 +84,24 @@ public class TemplatesController(AppDbContext db, ILogger<TemplatesController> l
             SourceDocumentId = sourceDoc.Id,
             CreatedAt = DateTime.UtcNow,
             Rules = sourceDoc.ExtractedFields
-                .Select(f => new TemplateFieldRule
+                .Select(f =>
                 {
-                    Id = Guid.NewGuid(),
-                    Name = f.Name,
-                    DataType = f.DataType,
-                    IsRequired = f.IsRequired,
-                    BoundingRegionsJson = f.BoundingRegionsJson,
+                    var rule = new TemplateFieldRule
+                    {
+                        Id = Guid.NewGuid(),
+                        Name = f.Name,
+                        DataType = f.DataType,
+                        IsRequired = f.IsRequired,
+                        BoundingRegionsJson = f.BoundingRegionsJson,
+                    };
+
+                    if (overrides.TryGetValue(f.Name, out var ovr))
+                    {
+                        rule.Hint = string.IsNullOrWhiteSpace(ovr.Hint) ? null : ovr.Hint.Trim();
+                        rule.SetAliases(ovr.Aliases);
+                    }
+
+                    return rule;
                 })
                 .ToList(),
         };

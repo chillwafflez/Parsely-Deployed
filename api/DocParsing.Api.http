@@ -8,3 +8,39 @@ GET {{base}}/api/documents/REPLACE_WITH_GUID
 
 ### Download original file
 GET {{base}}/api/documents/REPLACE_WITH_GUID/file
+
+### List templates (grab a TemplateId for the voice/fill request below)
+GET {{base}}/api/templates
+
+### Get a template by id (inspect Hint + Aliases on each rule)
+GET {{base}}/api/templates/REPLACE_WITH_TEMPLATE_GUID
+
+
+### ----- Voice: mint a short-lived Azure Speech JWT for the browser -----
+# Requires Speech:Key + Speech:Region via dotnet user-secrets.
+GET {{base}}/api/voice/token
+
+### ----- Voice: map a transcript to structured field patches -----
+# Requires OpenAI:Key (+ optional OpenAI:Endpoint for Azure) via dotnet user-secrets.
+# Replace TemplateId with the id from the templates list above.
+POST {{base}}/api/voice/fill
+Content-Type: application/json
+
+{
+  "templateId": "REPLACE_WITH_TEMPLATE_GUID",
+  "transcript": "For the customer name put Jane Doe, the purchase order is P.O. 2302, and the invoice total is one hundred twenty five dollars",
+  "currentValues": {}
+}
+
+### ----- Voice: with existing field values for disambiguation context -----
+POST {{base}}/api/voice/fill
+Content-Type: application/json
+
+{
+  "templateId": "REPLACE_WITH_TEMPLATE_GUID",
+  "transcript": "Change the tax to fifteen dollars",
+  "currentValues": {
+    "InvoiceTotal": "125.00",
+    "VendorName": "Acme Corp"
+  }
+}

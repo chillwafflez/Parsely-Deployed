@@ -4,9 +4,24 @@ import * as React from "react";
 import { Document, Page, pdfjs } from "react-pdf";
 import "react-pdf/dist/Page/AnnotationLayer.css";
 import "react-pdf/dist/Page/TextLayer.css";
+import { cn } from "@/lib/cn";
 import type { DrawResult, ExtractedField } from "@/lib/types";
 import { BoundingBoxOverlay } from "./bounding-box-overlay";
 import { DrawingLayer } from "./drawing-layer";
+
+/** Arguments passed to a custom page-overlay renderer. */
+export interface PageOverlayArgs {
+  pageNumber: number;
+  pageWidthPoints: number;
+  pageHeightPoints: number;
+}
+
+/**
+ * Render prop that replaces the default BoundingBoxOverlay when provided
+ * (and drawMode is false). Lets the TemplateFillStage plug in its
+ * FieldSlotOverlay without duplicating the react-pdf wiring in this file.
+ */
+export type PageOverlayRenderer = (args: PageOverlayArgs) => React.ReactNode;
 
 /**
  * PDF.js worker config. Per react-pdf docs this MUST live in the same module
@@ -28,6 +43,17 @@ interface PdfDocumentViewProps {
   onPagesLoaded?: (count: number) => void;
   drawMode: boolean;
   onDrawComplete: (result: DrawResult) => void;
+  /**
+   * When true, ghosts the PDF page with reduced opacity so overlaid
+   * field slots become the visual focal point. Used by TemplateFillStage.
+   */
+  ghost?: boolean;
+  /**
+   * Optional renderer that replaces the default BoundingBoxOverlay.
+   * Called per page once its native dimensions are known. Ignored when
+   * drawMode is active.
+   */
+  renderPageOverlay?: PageOverlayRenderer;
 }
 
 interface PageDimensions {
@@ -46,6 +72,8 @@ export default function PdfDocumentView({
   onPagesLoaded,
   drawMode,
   onDrawComplete,
+  ghost = false,
+  renderPageOverlay,
 }: PdfDocumentViewProps) {
   const [numPages, setNumPages] = React.useState(0);
   const [pageDims, setPageDims] = React.useState<Map<number, PageDimensions>>(
@@ -121,18 +149,8 @@ export default function PdfDocumentView({
                 onLoadSuccess={handlePageLoad}
                 renderTextLayer={false}
                 renderAnnotationLayer={false}
-                className="block"
+                className={cn("block", ghost && "opacity-20")}
               />
-              {dims && !drawMode && (
-                <BoundingBoxOverlay
-                  pageNumber={pageNumber}
-                  pageWidthPoints={dims.widthPoints}
-                  pageHeightPoints={dims.heightPoints}
-                  fields={fields}
-                  selectedFieldId={selectedFieldId}
-                  onSelectField={onSelectField}
-                />
-              )}
               {dims && drawMode && (
                 <DrawingLayer
                   pageNumber={pageNumber}
@@ -141,6 +159,22 @@ export default function PdfDocumentView({
                   onDrawComplete={onDrawComplete}
                 />
               )}
+              {dims && !drawMode && renderPageOverlay
+                ? renderPageOverlay({
+                    pageNumber,
+                    pageWidthPoints: dims.widthPoints,
+                    pageHeightPoints: dims.heightPoints,
+                  })
+                : dims && !drawMode && (
+                    <BoundingBoxOverlay
+                      pageNumber={pageNumber}
+                      pageWidthPoints={dims.widthPoints}
+                      pageHeightPoints={dims.heightPoints}
+                      fields={fields}
+                      selectedFieldId={selectedFieldId}
+                      onSelectField={onSelectField}
+                    />
+                  )}
             </div>
           );
         })}

@@ -2,10 +2,14 @@
 
 import * as React from "react";
 import { createPortal } from "react-dom";
-import { Check, Save } from "lucide-react";
+import { Check, ChevronDown, Save } from "lucide-react";
 import { Button } from "../ui/button";
 import { cn } from "@/lib/cn";
-import type { ExtractedField, TemplateApplyTo } from "@/lib/types";
+import type {
+  ExtractedField,
+  RuleOverride,
+  TemplateApplyTo,
+} from "@/lib/types";
 
 const DOCUMENT_KINDS = [
   "Invoice",
@@ -21,6 +25,13 @@ const LABEL_CLASS =
 const INPUT_CLASS = cn(
   "h-8 px-2.5 border border-line rounded-md",
   "bg-surface text-ink font-ui text-[13px]",
+  "focus:outline-0 focus:border-accent",
+  "focus:shadow-[0_0_0_3px_var(--color-accent-weak)]"
+);
+
+const INPUT_CLASS_SM = cn(
+  "h-7 px-2 border border-line rounded-md",
+  "bg-surface text-ink font-ui text-[12px]",
   "focus:outline-0 focus:border-accent",
   "focus:shadow-[0_0_0_3px_var(--color-accent-weak)]"
 );
@@ -41,6 +52,15 @@ const SEG_ACTIVE =
 
 const SEG_INACTIVE = "bg-transparent text-ink-2";
 
+const RULE_SUB_LABEL =
+  "text-[10.5px] text-ink-3 font-semibold tracking-[0.04em] uppercase";
+
+/** Per-rule editable state. Stored as raw strings so we don't churn state on every keystroke. */
+interface RuleDraft {
+  hint: string;
+  aliases: string;
+}
+
 interface SaveTemplateModalProps {
   fields: ExtractedField[];
   /** Suggested name (e.g., vendor-derived) shown as the default. */
@@ -51,6 +71,7 @@ interface SaveTemplateModalProps {
     kind: string;
     description: string;
     applyTo: TemplateApplyTo;
+    ruleOverrides?: Record<string, RuleOverride>;
   }) => void | Promise<void>;
 }
 
@@ -64,6 +85,8 @@ export function SaveTemplateModal({
   const [kind, setKind] = React.useState<string>("Invoice");
   const [description, setDescription] = React.useState("");
   const [applyTo, setApplyTo] = React.useState<TemplateApplyTo>("similar");
+  const [drafts, setDrafts] = React.useState<Record<string, RuleDraft>>({});
+  const [expanded, setExpanded] = React.useState<Set<string>>(new Set());
   const [submitting, setSubmitting] = React.useState(false);
   const [mounted, setMounted] = React.useState(false);
   const nameInputRef = React.useRef<HTMLInputElement>(null);
@@ -89,6 +112,40 @@ export function SaveTemplateModal({
 
   const canSubmit = name.trim().length > 0 && !submitting;
 
+  const toggleExpanded = (fieldName: string) => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(fieldName)) next.delete(fieldName);
+      else next.add(fieldName);
+      return next;
+    });
+  };
+
+  const updateDraft = (
+    fieldName: string,
+    key: keyof RuleDraft,
+    value: string
+  ) => {
+    setDrafts((prev) => ({
+      ...prev,
+      [fieldName]: { ...(prev[fieldName] ?? { hint: "", aliases: "" }), [key]: value },
+    }));
+  };
+
+  const buildRuleOverrides = (): Record<string, RuleOverride> | undefined => {
+    const result: Record<string, RuleOverride> = {};
+    for (const [fieldName, draft] of Object.entries(drafts)) {
+      const hint = draft.hint.trim();
+      const aliases = draft.aliases
+        .split(",")
+        .map((a) => a.trim())
+        .filter((a) => a.length > 0);
+      if (hint.length === 0 && aliases.length === 0) continue;
+      result[fieldName] = { hint: hint || null, aliases };
+    }
+    return Object.keys(result).length > 0 ? result : undefined;
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!canSubmit) return;
@@ -99,6 +156,7 @@ export function SaveTemplateModal({
         kind,
         description: description.trim(),
         applyTo,
+        ruleOverrides: buildRuleOverrides(),
       });
     } finally {
       setSubmitting(false);
@@ -204,32 +262,107 @@ export function SaveTemplateModal({
             </div>
 
             <div className="flex flex-col gap-[5px]">
-              <span className={LABEL_CLASS}>
-                Field rules captured ({fields.length})
-              </span>
-              <div className="flex flex-col gap-1 max-h-[200px] overflow-auto border border-line rounded-md p-2 bg-surface-2">
+              <div className="flex items-baseline justify-between">
+                <span className={LABEL_CLASS}>
+                  Field rules captured ({fields.length})
+                </span>
+                <span className="text-[11px] text-ink-4">
+                  Click a row to add voice hints
+                </span>
+              </div>
+              <div className="flex flex-col border border-line rounded-md bg-surface-2 overflow-hidden">
                 {fields.length === 0 ? (
                   <div className="p-2.5 text-center text-ink-4 text-[12px]">
                     No fields to capture yet.
                   </div>
                 ) : (
-                  fields.map((f) => (
-                    <div
-                      key={f.id}
-                      className="grid grid-cols-[1fr_110px_70px_20px] items-center gap-2 text-[12px] py-0.5 px-1"
-                    >
-                      <div className="font-medium text-ink overflow-hidden text-ellipsis whitespace-nowrap">
-                        {f.name}
+                  fields.map((f) => {
+                    const isExpanded = expanded.has(f.name);
+                    const draft = drafts[f.name];
+                    const hasOverride = Boolean(
+                      draft && (draft.hint.trim() || draft.aliases.trim())
+                    );
+                    return (
+                      <div
+                        key={f.id}
+                        className="border-b border-line last:border-b-0"
+                      >
+                        <button
+                          type="button"
+                          onClick={() => toggleExpanded(f.name)}
+                          aria-expanded={isExpanded}
+                          aria-controls={`rule-${f.id}-panel`}
+                          className={cn(
+                            "w-full grid grid-cols-[1fr_16px_110px_70px_16px] items-center gap-2",
+                            "text-[12px] py-1.5 px-2 text-left",
+                            "hover:bg-surface focus:outline-0 focus:bg-surface",
+                            "cursor-pointer"
+                          )}
+                        >
+                          <span className="font-medium text-ink overflow-hidden text-ellipsis whitespace-nowrap">
+                            {f.name}
+                          </span>
+                          <span className="flex justify-center">
+                            {hasOverride && (
+                              <Check
+                                size={12}
+                                className="text-ok"
+                                aria-label="Voice hint set"
+                              />
+                            )}
+                          </span>
+                          <span className="font-mono text-[11px] text-ink-3">
+                            {f.dataType}
+                          </span>
+                          <span className="font-mono text-[11px] text-ink-3">
+                            {f.isRequired ? "required" : "optional"}
+                          </span>
+                          <ChevronDown
+                            size={13}
+                            className={cn(
+                              "text-ink-3 transition-transform",
+                              isExpanded && "rotate-180"
+                            )}
+                          />
+                        </button>
+                        {isExpanded && (
+                          <div
+                            id={`rule-${f.id}-panel`}
+                            className="px-2 pt-1 pb-2.5 flex flex-col gap-1.5 bg-surface"
+                          >
+                            <label className="flex flex-col gap-0.5">
+                              <span className={RULE_SUB_LABEL}>Voice hint</span>
+                              <input
+                                className={INPUT_CLASS_SM}
+                                value={draft?.hint ?? ""}
+                                onChange={(e) =>
+                                  updateDraft(f.name, "hint", e.target.value)
+                                }
+                                maxLength={200}
+                                placeholder="e.g., the billing contact's full name"
+                                autoComplete="off"
+                              />
+                            </label>
+                            <label className="flex flex-col gap-0.5">
+                              <span className={RULE_SUB_LABEL}>Aliases</span>
+                              <input
+                                className={INPUT_CLASS_SM}
+                                value={draft?.aliases ?? ""}
+                                onChange={(e) =>
+                                  updateDraft(f.name, "aliases", e.target.value)
+                                }
+                                placeholder="PO, P.O., purchase order"
+                                autoComplete="off"
+                              />
+                              <span className="text-[10.5px] text-ink-4 mt-0.5">
+                                Separate with commas
+                              </span>
+                            </label>
+                          </div>
+                        )}
                       </div>
-                      <div className="font-mono text-[11px] text-ink-3">
-                        {f.dataType}
-                      </div>
-                      <div className="font-mono text-[11px] text-ink-3">
-                        {f.isRequired ? "required" : "optional"}
-                      </div>
-                      <Check size={13} className="text-ok" />
-                    </div>
-                  ))
+                    );
+                  })
                 )}
               </div>
             </div>
