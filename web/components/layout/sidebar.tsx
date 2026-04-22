@@ -8,7 +8,6 @@ import {
   History,
   LayoutTemplate,
   Plus,
-  Settings,
   Trash2,
   Upload,
 } from "lucide-react";
@@ -92,11 +91,6 @@ export function Sidebar({
           label="Templates"
           count={templates.length}
           title="Templates browser — Phase 2"
-        />
-        <NavButtonPlaceholder
-          icon={<Settings size={17} />}
-          label="Settings"
-          title="Settings — Phase 2"
         />
       </div>
 
