@@ -3,7 +3,7 @@
 import * as React from "react";
 import dynamic from "next/dynamic";
 import { FileText, Square, ZoomIn, ZoomOut } from "lucide-react";
-import { Button, Kbd } from "./button";
+import { Button, Kbd } from "../ui/button";
 import type { DrawResult, ExtractedField } from "@/lib/types";
 import styles from "./document-pane.module.css";
 

@@ -3,7 +3,7 @@
 import * as React from "react";
 import { Topbar } from "./topbar";
 import { Sidebar } from "./sidebar";
-import { Toast } from "./toast";
+import { Toast } from "../ui/toast";
 import { AppShellContext, type ToastTone } from "@/lib/app-shell-context";
 import { useTemplates } from "@/lib/hooks/use-templates";
 import type { DocumentResponse } from "@/lib/types";

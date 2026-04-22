@@ -3,9 +3,9 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { Clock, FileText, LayoutTemplate, Upload } from "lucide-react";
-import { Button } from "./button";
-import { ErrorBanner } from "./error-banner";
-import { Skeleton } from "./skeleton";
+import { Button } from "../ui/button";
+import { ErrorBanner } from "../ui/error-banner";
+import { Skeleton } from "../ui/skeleton";
 import { cn } from "@/lib/cn";
 import { uploadDocument } from "@/lib/api-client";
 import type { DocumentResponse, DocumentSummary } from "@/lib/types";

@@ -1,7 +1,7 @@
 "use client";
 
 import { use } from "react";
-import { DocumentLoader } from "@/components/document-loader";
+import { DocumentLoader } from "@/components/document/document-loader";
 
 interface DocumentPageProps {
   params: Promise<{ id: string }>;

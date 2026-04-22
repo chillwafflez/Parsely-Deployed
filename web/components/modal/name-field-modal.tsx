@@ -3,7 +3,7 @@
 import * as React from "react";
 import { createPortal } from "react-dom";
 import { Plus } from "lucide-react";
-import { Button } from "./button";
+import { Button } from "../ui/button";
 import { cn } from "@/lib/cn";
 import { FIELD_TYPES } from "@/lib/constants";
 import type { DrawnRect, FieldDataType } from "@/lib/types";

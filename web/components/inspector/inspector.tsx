@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { FileSearch, History, Info, PenLine, Save, Search, Sparkles } from "lucide-react";
-import { Button } from "./button";
+import { Button } from "../ui/button";
 import { InspectorField } from "./inspector-field";
 import { cn } from "@/lib/cn";
 import { groupFields } from "@/lib/field-groups";

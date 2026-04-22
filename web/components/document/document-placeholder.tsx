@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { AlertTriangle, FileX } from "lucide-react";
-import { Skeleton } from "./skeleton";
+import { Skeleton } from "../ui/skeleton";
 import styles from "./document-placeholder.module.css";
 
 /**

@@ -3,7 +3,7 @@
 import * as React from "react";
 import { createPortal } from "react-dom";
 import { Check, Save } from "lucide-react";
-import { Button } from "./button";
+import { Button } from "../ui/button";
 import { cn } from "@/lib/cn";
 import type { ExtractedField, TemplateApplyTo } from "@/lib/types";
 import styles from "./save-template-modal.module.css";

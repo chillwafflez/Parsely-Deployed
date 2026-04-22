@@ -120,40 +120,45 @@ document-parsing/
 │   │   ├── page.module.css            Thin home-page wrapper styles (banner slot)
 │   │   └── page.tsx                   Landing route: UploadStage + parsing overlay +
 │   │                                  inline upload-error banner, navigates to /documents/[id]
-│   ├── components/
-│   │   ├── app-shell.{tsx,module.css}             Persistent chrome: Topbar + Sidebar + single
-│   │   │                                           Toast root; owns useTemplates + activeDocument
-│   │   ├── bounding-box-overlay.{tsx,module.css}  Confidence-colored bboxes w/ hover tags
-│   │   ├── button.{tsx,module.css}                Reusable btn (4 variants) + Kbd
-│   │   ├── delete-template-modal.{tsx,module.css} Destructive-action confirm modal (alertdialog)
-│   │   ├── document-list.{tsx,module.css}         Documents history table w/ drag-drop upload,
-│   │   │                                           template badges, skeleton, empty state
-│   │   ├── document-loader.tsx                    Owns `/documents/[id]` state machine
-│   │   │                                           (loading|ready|not-found|error), syncs shell
-│   │   ├── document-pane.{tsx,module.css}         Toolbar + zoom + dynamic import boundary + draw mode
-│   │   ├── document-placeholder.{tsx,module.css}  DocumentLoadingSkeleton (matches ReviewStage
-│   │   │                                           layout) + DocumentErrorPanel + NotFoundPanel
-│   │   ├── drawing-layer.{tsx,module.css}         Full-page mouse capture for rectangle draw
-│   │   ├── error-banner.{tsx,module.css}          Persistent inline banner w/ role="alert" +
-│   │   │                                           dismiss. Reserved for non-transient errors.
-│   │   ├── inspector-field.{tsx,module.css}       Individual field row with inline edit + popover
-│   │   ├── inspector.{tsx,module.css}             Composed right-pane: header, stats, search, pills,
-│   │   │                                           grouped fields, rich empty states, footer
-│   │   ├── name-field-modal.{tsx,module.css}      Naming modal after drawing (autofocus, Esc/backdrop)
-│   │   ├── parsing-overlay.{tsx,module.css}       Progress card
-│   │   ├── pdf-document-view.{tsx,module.css}     react-pdf integration (SSR-skipped via next/dynamic)
-│   │   ├── review-stage.{tsx,module.css}          Composes DocumentPane + Inspector, owns doc
-│   │   │                                           mutations. Controlled — receives doc + updater
-│   │   │                                           from DocumentLoader.
-│   │   ├── save-template-modal.{tsx,module.css}   Template save UI (name, kind, desc, applyTo, rules)
-│   │   ├── sidebar.{tsx,module.css}               Client component w/ next/link + usePathname
-│   │   │                                           active states; hover-revealed template trash,
-│   │   │                                           DeleteTemplateModal orchestration
-│   │   ├── skeleton.{tsx,module.css}              Shimmer primitive w/ prefers-reduced-motion guard
-│   │   ├── toast.{tsx,module.css}
-│   │   ├── topbar.{tsx,module.css}                Includes matched-template badge pill
-│   │   ├── type-popover.{tsx,module.css}          Portal menu for data-type selection
-│   │   └── upload-stage.{tsx,module.css}          Dropzone w/ drag-drop
+│   ├── components/                                Organized by domain/type since 2026-04-22.
+│   │   ├── ui/                                    Generic primitives, zero domain knowledge
+│   │   │   ├── button.{tsx,module.css}            Reusable btn (4 variants) + Kbd
+│   │   │   ├── error-banner.{tsx,module.css}      Persistent inline banner w/ role="alert" +
+│   │   │   │                                       dismiss. Reserved for non-transient errors.
+│   │   │   ├── skeleton.{tsx,module.css}          Shimmer primitive w/ prefers-reduced-motion guard
+│   │   │   ├── toast.{tsx,module.css}             Auto-dismissing confirmation notification
+│   │   │   └── type-popover.{tsx,module.css}      Portal menu for data-type selection
+│   │   ├── layout/                                App chrome shared across all routes
+│   │   │   ├── app-shell.{tsx,module.css}         Persistent chrome: Topbar + Sidebar + single
+│   │   │   │                                       Toast root; owns useTemplates + activeDocument
+│   │   │   ├── sidebar.{tsx,module.css}           Client component w/ next/link + usePathname
+│   │   │   │                                       active states; hover-revealed template trash,
+│   │   │   │                                       DeleteTemplateModal orchestration
+│   │   │   └── topbar.{tsx,module.css}            Includes matched-template badge pill
+│   │   ├── document/                              Document viewing, uploading, and listing
+│   │   │   ├── bounding-box-overlay.{tsx,module.css}  Confidence-colored bboxes w/ hover tags
+│   │   │   ├── document-list.{tsx,module.css}     Documents history table w/ drag-drop upload,
+│   │   │   │                                       template badges, skeleton, empty state
+│   │   │   ├── document-loader.tsx                Owns `/documents/[id]` state machine
+│   │   │   │                                       (loading|ready|not-found|error), syncs shell
+│   │   │   ├── document-pane.{tsx,module.css}     Toolbar + zoom + dynamic import boundary + draw mode
+│   │   │   ├── document-placeholder.{tsx,module.css} DocumentLoadingSkeleton (matches ReviewStage
+│   │   │   │                                       layout) + DocumentErrorPanel + NotFoundPanel
+│   │   │   ├── drawing-layer.{tsx,module.css}     Full-page mouse capture for rectangle draw
+│   │   │   ├── parsing-overlay.{tsx,module.css}   Progress card
+│   │   │   ├── pdf-document-view.{tsx,module.css} react-pdf integration (SSR-skipped via next/dynamic)
+│   │   │   ├── review-stage.{tsx,module.css}      Composes DocumentPane + Inspector, owns doc
+│   │   │   │                                       mutations. Controlled — receives doc + updater
+│   │   │   │                                       from DocumentLoader.
+│   │   │   └── upload-stage.{tsx,module.css}      Dropzone w/ drag-drop
+│   │   ├── inspector/                             Right-pane field editor
+│   │   │   ├── inspector.{tsx,module.css}         Composed pane: header, stats, search, pills,
+│   │   │   │                                       grouped fields, rich empty states, footer
+│   │   │   └── inspector-field.{tsx,module.css}   Individual field row with inline edit + popover
+│   │   └── modal/                                 Portal dialogs
+│   │       ├── delete-template-modal.{tsx,module.css} Destructive-action confirm modal (alertdialog)
+│   │       ├── name-field-modal.{tsx,module.css}  Naming modal after drawing (autofocus, Esc/backdrop)
+│   │       └── save-template-modal.{tsx,module.css} Template save UI (name, kind, desc, applyTo, rules)
 │   ├── lib/
 │   │   ├── api-client.ts              upload/list/get doc, PATCH/POST/DELETE field, template CRUD
 │   │   ├── app-shell-context.ts       React context exposing showToast, refreshTemplates,
@@ -320,16 +325,29 @@ Done in three sub-sessions over 2026-04-21. All four core "demo polish" goals hi
 
 **Known minor staleness (documented, not fixed):** if the user deletes a template while viewing an affected document on `/documents/[id]`, the topbar badge and Inspector "Template: X" label remain stale until navigation. `DocumentLoader` owns the canonical document state and has no "template changed" signal. Prototype-acceptable; Phase-2 fix would add a `refreshDocument` method to `AppShellContext`.
 
-**Current committed state after Day 7:** commits on `main` up through `7da4ab0 feat: URL routing, AppShell, and centralized toast` (Session 7A). Sessions 7B / 7C / 7D were still uncommitted at end-of-session — the user typically does their own commits. Suggest three clean commits before the next session starts work:
-- `feat: documents history page with route-based sidebar nav` (7B — backend DTO, DocumentList, sidebar Link/usePathname refactor, button hover fix)
-- `feat: polish pass — skeletons, inline error banners, richer empty states` (7C)
-- `feat: template deletion UI with confirmation modal` (7D)
+**All Day 7 work (7A–7D) committed to `main` by 2026-04-22 start of day.** User confirmed via `/context` at session start.
+
+### Day 8 ✅ — components/ folder reorganization *(2026-04-22)*
+
+Organizational refactor only — zero behavior changes, zero TS/ESLint errors. Split the flat 23-file `web/components/` directory into 5 semantic subfolders using `git mv` so history is preserved as renames (walk git blame/log --follow through any component to see its Day 2–7 lineage).
+
+- **`components/ui/`** — 5 reusable primitives (button, error-banner, skeleton, toast, type-popover). Zero domain knowledge.
+- **`components/layout/`** — 3 chrome components (app-shell, sidebar, topbar). Shared across all routes.
+- **`components/document/`** — 10 components related to document viewing, uploading, and listing. `review-stage` lives here even though it composes Inspector, because the review experience is framed around the document.
+- **`components/inspector/`** — 2 components (inspector + inspector-field). The right-pane field editor.
+- **`components/modal/`** — 3 portal dialogs (delete-template, name-field, save-template).
+
+Import path updates: 6 `@/components/*` imports across `app/**` + 13 cross-subfolder relative imports across components (mostly `./button` → `../ui/button`). Same-folder imports kept as `./<sibling>` to avoid noise.
+
+**Consulted for planning**: [GitHub awesome-copilot Next.js instructions](https://github.com/github/awesome-copilot/blob/main/instructions/nextjs.instructions.md) + Next.js official App Router docs via context7. Both align on feature/type subfolder split with kebab-case folder names + CSS Module colocation. We explicitly skipped (per user preference): top-level `hooks/` and `contexts/` folders (too few files), `_components/` app-directory colocation (all components are cross-route), `index.ts` barrel files (tree-shaking + TS perf penalty), and renaming files to PascalCase (project-wide kebab-case consistency matters more).
+
+**Committed state after Day 8:** pending user commit at end of session. Suggested message: `refactor: organize components/ into feature subfolders`.
 
 ---
 
 ## 6. What's next — pre-demo runway
 
-Demo is 2026-04-27 (~6 days out as of 2026-04-21). All three core value props are functional (parse, correct, teach-via-template), URL routing works, history page exists, template deletion works, polish pass done. Remaining work is demo-content and nice-to-haves.
+Demo is 2026-04-27 (5 days out as of 2026-04-22). All three core value props are functional (parse, correct, teach-via-template), URL routing works, history page exists, template deletion works, polish pass done, components/ folder reorganized. Remaining work is demo-content and nice-to-haves.
 
 ### Demo-critical (do first)
 
@@ -346,8 +364,14 @@ Demo is 2026-04-27 (~6 days out as of 2026-04-21). All three core value props ar
 
 ### Deferred to Phase 2 (post-demo)
 
-### Deferred to Phase 2 (post-demo)
-
+- **Migrate CSS Modules → Tailwind + regular CSS (potentially with shadcn/ui).** The original Day 2 plan was "Tailwind + CSS Modules for complex cases," but the port of the Claude Design mock pulled almost everything into `.module.css` (23 files today). User confirmed (2026-04-22) they want a **full migration post-demo**, not incremental. Key notes for the migrating session:
+  - **Stack fit is good.** shadcn/ui officially supports Tailwind v4 + React 19 (verified via context7), which matches our stack exactly. Components are copy-in source code (not an npm dep), using Radix UI primitives for accessibility — we'd own the code.
+  - **Design will NOT change.** Tailwind compiles to CSS; pixel-identical output is achievable with careful translation. Visual regressions are a translation risk, not a design shift.
+  - **What stays in CSS, not Tailwind:** `@keyframes` (define in `globals.css`), gnarly pseudo-element composition (e.g., the confidence-bbox `::before` with `color-mix()`), any rule too verbose as Tailwind arbitrary values. Tailwind's `motion-safe` / `motion-reduce` variants can replace the `prefers-reduced-motion` `@media` block we have in Skeleton.
+  - **Candidate shadcn replacements for existing components:** `<Dialog>` (Radix) for our three modal/*.tsx files, `<Toast>` for `ui/toast.tsx`, `<Button>` for `ui/button.tsx`, `<Skeleton>` for `ui/skeleton.tsx`. `<Alert>` for `ui/error-banner.tsx`. Inspector / DocumentPane / sidebar template card etc. stay custom (no shadcn primitive fits).
+  - **Scope estimate:** 23 components × roughly 30–100 CSS rules each to translate + visually verify. Not a 1-day job. Budget 2–3 days for a careful rollout with side-by-side diffing.
+  - **Migration order when we tackle it:** `ui/` primitives first (smallest, highest blast radius if wrong), then `modal/` (swap to shadcn Dialog), then `layout/`, then `inspector/`, then `document/` (most complex — PDF layering, bbox overlay, drawing layer).
+  - **Decision point at start of migration:** "full rewrite from scratch using shadcn primitives" vs. "mechanical translation of existing CSS Modules to Tailwind utilities keeping our custom components." The former is cleaner long-term, the latter is a safer diff to review.
 - **Revert button.** Proper implementation needs either re-running Azure DI (expensive + discards user-drawn fields) or storing original values per field (schema change + per-field history). Neither is cheap. The demo never needs to revert.
 - **Microsoft Teams tab wrapper.** Re-skin with Fluent UI likely required. ~1 day.
 - **E-signature routing via Teams.** Adobe Sign / Microsoft Syntex integration.
@@ -483,22 +507,23 @@ The UI draws 1:1 from the Claude Design mock exported to `Document Parsing Servi
 
 ## 11. Where we left off
 
-**2026-04-21 end of Day 7 session:**
+**2026-04-22 end of Day 8 session:**
 
-- Days 1–7 complete. Demo loop is **refresh-safe** (URL routing), **multi-document** (history page at `/documents`), **visually polished** (skeletons, inline error banners, rich empty states), and **template lifecycle complete** (create + match + apply + delete via UI).
-- Full click-through demo: land on `/` → see upload dropzone → drop PDF → parsing overlay → auto-navigate to `/documents/[id]` → review with aligned bboxes → inline correct → draw missed field → save as template → see template in sidebar with hover-revealed trash → upload second invoice from same vendor → toast "matched to X" → template rules auto-apply. Refresh at any point preserves state.
-- All three Day 7 session lots (7A routing, 7B history, 7C polish, 7D delete) pass `pnpm build` with zero TS errors and `pnpm lint` with zero ESLint warnings.
-- **Commits status:** `7da4ab0` (Session 7A) is on main. Sessions 7B / 7C / 7D were uncommitted at end of session; user intended to commit them. Suggested three-commit split in §5 above.
+- Days 1–8 complete. Day 7 (URL routing, history page, polish pass, template delete) was committed at the start of this session per the user. Day 8 (components/ folder reorg) pending commit at end of session.
+- `pnpm build` and `pnpm lint` both clean after the reorg — zero TS errors, zero ESLint warnings. Git detected all moves as `renamed:` entries so history is preserved.
+- Demo loop unchanged from end-of-Day-7 state — pure organizational refactor. Full click-through still works: land on `/` → upload → `/documents/[id]` → review with bboxes → correct → draw → save template → re-upload same vendor → auto-match → rule apply. Refresh-safe throughout.
+- **Locked-in Phase-2 commitment (2026-04-22):** user wants a **full migration from CSS Modules to Tailwind + regular CSS**, potentially adopting shadcn/ui + Radix UI primitives. Explicitly deferred to post-demo — see §6 "Deferred to Phase 2" for the detailed game plan. Don't start this before 2026-04-27.
 - `appsettings.json` still has empty `Key`; User Secrets holds the live key.
 - `.npmrc` in `web/` still enforces pnpm hoist for pdfjs-dist.
 - No schema changes this session — SQLite DB carries forward cleanly.
 
 ### First actions for the next session
 
-1. **Ask if 7B / 7C / 7D are committed.** If not, suggest the three-commit split from §5.
-2. **Confirm demo-runway priority from §6.** Default is to tackle seed data (§6 item 1) — the history page looks empty without prior uploads, and the cross-vendor template-matching story needs at least one vendor appearing twice. Present the three seeder options (startup seeder / JSON snapshots / shell script) and let user pick.
-3. Before any schema change, tell the user to `rm api/app.db*`. The demo-runway items in §6 don't require any.
-4. `use context7` for any library-specific uncertainty (user consistently reminds).
+1. **Ask if the Day 8 reorg commit landed.** Suggested message: `refactor: organize components/ into feature subfolders`.
+2. **Confirm demo-runway priority from §6.** Default is still seed data (§6 item 1) — the history page looks empty without prior uploads, and the cross-vendor template-matching story needs at least one vendor appearing twice. Present the three seeder options (startup seeder / JSON snapshots / shell script) and let user pick.
+3. **Do NOT start the Tailwind/shadcn migration before the demo.** User explicitly scoped it post-2026-04-27. If asked about styling changes in the interim, propose the smallest-surface fix in the existing `.module.css`.
+4. Before any schema change, tell the user to `rm api/app.db*`. The demo-runway items in §6 don't require any.
+5. `use context7` for any library-specific uncertainty (user consistently reminds).
 
 ### Open deferred items (for reference)
 
@@ -507,6 +532,7 @@ The UI draws 1:1 from the Claude Design mock exported to `Document Parsing Servi
 - **Template-delete staleness** — §6 item 3; minor, affects only the open-document topbar badge.
 - **Line Items table special-render** — Phase 2 per long-standing note.
 - **Revert button** — Phase 2 per Day 7 triage; needs per-field history or re-run of Azure DI.
+- **Full Tailwind + shadcn/ui migration** — Phase 2, locked in 2026-04-22. Detailed plan in §6 Deferred.
 
 ---
 
@@ -537,4 +563,4 @@ The UI draws 1:1 from the Claude Design mock exported to `Document Parsing Servi
 
 ---
 
-_Last updated: 2026-04-21 after Day 7 complete (URL routing + history page + polish pass + template deletion UI). No schema changes this cycle. 7A committed as `7da4ab0`; 7B/7C/7D were uncommitted at session end — suggested three-commit split in §5. Demo target 2026-04-27 (~6 days out)._
+_Last updated: 2026-04-22 after Day 8 (components/ folder reorg into ui/layout/document/inspector/modal subfolders). All Day 7 work committed by start of session; Day 8 commit pending. Locked in post-demo Phase-2 plan for full CSS Modules → Tailwind + shadcn/ui migration (see §6 Deferred). Demo target 2026-04-27 (5 days out)._

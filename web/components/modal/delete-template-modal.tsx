@@ -3,7 +3,7 @@
 import * as React from "react";
 import { createPortal } from "react-dom";
 import { AlertTriangle, Trash2 } from "lucide-react";
-import { Button } from "./button";
+import { Button } from "../ui/button";
 import styles from "./delete-template-modal.module.css";
 
 interface DeleteTemplateModalProps {

@@ -2,9 +2,9 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { ErrorBanner } from "@/components/error-banner";
-import { ParsingOverlay } from "@/components/parsing-overlay";
-import { UploadStage } from "@/components/upload-stage";
+import { ErrorBanner } from "@/components/ui/error-banner";
+import { ParsingOverlay } from "@/components/document/parsing-overlay";
+import { UploadStage } from "@/components/document/upload-stage";
 import { useAppShell } from "@/lib/app-shell-context";
 import type { DocumentResponse } from "@/lib/types";
 import styles from "./page.module.css";

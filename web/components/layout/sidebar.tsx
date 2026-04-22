@@ -17,8 +17,8 @@ import { cn } from "@/lib/cn";
 import { formatRelativeTime } from "@/lib/format";
 import { useAppShell } from "@/lib/app-shell-context";
 import { deleteTemplate } from "@/lib/api-client";
-import { DeleteTemplateModal } from "./delete-template-modal";
-import { Skeleton } from "./skeleton";
+import { DeleteTemplateModal } from "../modal/delete-template-modal";
+import { Skeleton } from "../ui/skeleton";
 import styles from "./sidebar.module.css";
 
 interface SidebarProps {

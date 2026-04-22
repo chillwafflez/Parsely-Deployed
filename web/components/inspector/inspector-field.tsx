@@ -5,7 +5,7 @@ import { AlertTriangle, Check, Lock, Pin, Trash2 } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { confidenceLevel } from "@/lib/bbox";
 import type { ExtractedField, FieldDataType, FieldUpdate } from "@/lib/types";
-import { TypePopover } from "./type-popover";
+import { TypePopover } from "../ui/type-popover";
 import styles from "./inspector-field.module.css";
 
 interface InspectorFieldProps {

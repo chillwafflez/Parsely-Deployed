@@ -2,8 +2,8 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { DocumentList } from "@/components/document-list";
-import { ParsingOverlay } from "@/components/parsing-overlay";
+import { DocumentList } from "@/components/document/document-list";
+import { ParsingOverlay } from "@/components/document/parsing-overlay";
 import { useAppShell } from "@/lib/app-shell-context";
 import { useDocuments } from "@/lib/hooks/use-documents";
 import type { DocumentResponse } from "@/lib/types";

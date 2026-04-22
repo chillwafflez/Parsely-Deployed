@@ -2,9 +2,9 @@
 
 import * as React from "react";
 import { DocumentPane } from "./document-pane";
-import { Inspector } from "./inspector";
-import { NameFieldModal } from "./name-field-modal";
-import { SaveTemplateModal } from "./save-template-modal";
+import { Inspector } from "../inspector/inspector";
+import { NameFieldModal } from "../modal/name-field-modal";
+import { SaveTemplateModal } from "../modal/save-template-modal";
 import {
   createField,
   createTemplate,

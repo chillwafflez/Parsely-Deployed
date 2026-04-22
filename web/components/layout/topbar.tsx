@@ -1,5 +1,5 @@
 import { LayoutTemplate, Settings } from "lucide-react";
-import { Button } from "./button";
+import { Button } from "../ui/button";
 import styles from "./topbar.module.css";
 
 interface TopbarProps {
