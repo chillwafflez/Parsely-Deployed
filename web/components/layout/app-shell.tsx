@@ -7,7 +7,6 @@ import { Toast } from "../ui/toast";
 import { AppShellContext, type ToastTone } from "@/lib/app-shell-context";
 import { useTemplates } from "@/lib/hooks/use-templates";
 import type { DocumentResponse } from "@/lib/types";
-import styles from "./app-shell.module.css";
 
 const TOAST_MS = 2400;
 
@@ -66,12 +65,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <AppShellContext.Provider value={contextValue}>
-      <div className={styles.app}>
+      <div className="grid grid-rows-[56px_1fr] h-screen">
         <Topbar
           documentName={activeDocument?.fileName}
           templateName={activeDocument?.templateName ?? null}
         />
-        <div className={styles.body}>
+        <div className="grid grid-cols-[272px_1fr] min-h-0">
           <Sidebar
             templates={templates}
             activeTemplateId={activeDocument?.templateId ?? null}
@@ -82,7 +81,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             parseCount={activeDocument ? 1 : 0}
             queueCount={0}
           />
-          <main className={styles.workspace}>{children}</main>
+          <main className="flex min-h-0 bg-bg">{children}</main>
         </div>
         {toast && (
           <Toast key={toast.id} message={toast.message} tone={toast.tone} />

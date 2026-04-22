@@ -3,8 +3,8 @@
 import * as React from "react";
 import { createPortal } from "react-dom";
 import { AlertTriangle, Trash2 } from "lucide-react";
+import { cn } from "@/lib/cn";
 import { Button } from "../ui/button";
-import styles from "./delete-template-modal.module.css";
 
 interface DeleteTemplateModalProps {
   templateName: string;
@@ -17,6 +17,23 @@ interface DeleteTemplateModalProps {
    */
   onConfirm: () => Promise<void>;
 }
+
+// Solid-red destructive button. Kept local because this is the only destructive
+// confirmation in the app today — if a second one shows up, promote to a
+// `variant="destructive"` on <Button>.
+const DANGER_BTN_CLASS = cn(
+  "inline-flex items-center gap-1.5",
+  "h-7 px-3 rounded-md border",
+  "font-ui text-[12.5px] font-medium text-white",
+  "bg-err border-[color-mix(in_oklab,var(--color-err)_60%,black)]",
+  "cursor-pointer",
+  "shadow-[0_1px_0_rgba(0,0,0,0.08),inset_0_1px_0_rgba(255,255,255,0.12)]",
+  "transition-[background-color,border-color] duration-100",
+  "hover:enabled:bg-[color-mix(in_oklab,var(--color-err)_88%,black)]",
+  "hover:enabled:border-[color-mix(in_oklab,var(--color-err)_50%,black)]",
+  "focus-visible:outline-[2px_solid_var(--color-err)] focus-visible:outline-offset-2",
+  "disabled:opacity-60 disabled:cursor-not-allowed"
+);
 
 /**
  * Destructive-action confirmation. Matches the NameFieldModal pattern:
@@ -77,53 +94,59 @@ export function DeleteTemplateModal({
 
   return createPortal(
     <div
-      className={styles.scrim}
       onMouseDown={handleScrimMouseDown}
       role="presentation"
+      className="fixed inset-0 z-[100] grid place-items-center bg-[rgba(15,23,42,0.32)] animate-scrim-fade"
     >
       <div
-        className={styles.modal}
         role="alertdialog"
         aria-modal="true"
         aria-labelledby="delete-template-title"
         aria-describedby="delete-template-desc"
         onMouseDown={(e) => e.stopPropagation()}
+        className="w-[460px] max-w-[92vw] bg-surface rounded-lg shadow-lg overflow-hidden animate-modal-pop"
       >
-        <header className={styles.head}>
-          <div className={styles.headIcon}>
+        <header className="flex items-start gap-3 pt-[18px] px-5 pb-2.5">
+          <div className="shrink-0 w-[38px] h-[38px] rounded-[10px] bg-err-weak text-err grid place-items-center mt-px">
             <AlertTriangle size={20} aria-hidden="true" />
           </div>
-          <div className={styles.headText}>
-            <h2 id="delete-template-title">
-              Delete template <b>“{templateName}”</b>?
+          <div>
+            <h2
+              id="delete-template-title"
+              className="m-0 text-[16px] font-semibold tracking-[-0.01em] text-ink"
+            >
+              Delete template <b>&ldquo;{templateName}&rdquo;</b>?
             </h2>
-            <p id="delete-template-desc">
+            <p
+              id="delete-template-desc"
+              className="mt-1 mb-0 text-ink-3 text-[13px] leading-[1.5]"
+            >
               This will remove the template and its field rules. It can&rsquo;t be undone.
             </p>
           </div>
         </header>
 
         {runs > 0 && (
-          <div className={styles.body}>
-            <div className={styles.impact}>
+          <div className="pt-1 px-5 pb-4">
+            <div className="flex items-start gap-2 py-2.5 px-3 bg-surface-2 border border-line rounded-md text-[12.5px] text-ink-2 leading-[1.5]">
               <span>
-                <b>{runsLabel}</b> matched to this template. Their extracted fields
+                <b className="text-ink font-semibold">{runsLabel}</b> matched to this template. Their extracted fields
                 stay intact, but they will no longer show the template badge.
               </span>
             </div>
           </div>
         )}
 
-        <footer className={styles.foot}>
+        <footer className="flex items-center gap-2 justify-end py-3 px-5 bg-surface-2 border-t border-line">
           <Button type="button" onClick={onCancel} disabled={submitting}>
             Cancel
           </Button>
           <button
             ref={confirmBtnRef}
             type="button"
-            className={styles.dangerBtn}
             onClick={handleConfirm}
             disabled={submitting}
+            className={DANGER_BTN_CLASS}
           >
             <Trash2 size={13} aria-hidden="true" />
             {submitting ? "Deleting…" : "Delete template"}

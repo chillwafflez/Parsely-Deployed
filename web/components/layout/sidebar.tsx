@@ -18,7 +18,6 @@ import { useAppShell } from "@/lib/app-shell-context";
 import { deleteTemplate } from "@/lib/api-client";
 import { DeleteTemplateModal } from "../modal/delete-template-modal";
 import { Skeleton } from "../ui/skeleton";
-import styles from "./sidebar.module.css";
 
 interface SidebarProps {
   templates: TemplateSummary[];
@@ -29,6 +28,21 @@ interface SidebarProps {
   documentsCount?: number;
   queueCount: number;
 }
+
+const NAV_ITEM_BASE = cn(
+  "flex items-center gap-3 w-full",
+  "py-[9px] px-3 rounded-md",
+  "font-ui text-[14px] font-medium text-left no-underline",
+  "bg-transparent border-0 cursor-pointer",
+  "hover:enabled:bg-surface-2",
+  "disabled:opacity-[0.55] disabled:cursor-not-allowed",
+  "[&_svg]:opacity-80"
+);
+
+const NAV_COUNT_BASE = cn(
+  "ml-auto py-0.5 px-[7px] rounded-[4px] border",
+  "font-mono text-[12px]"
+);
 
 export function Sidebar({
   templates,
@@ -64,8 +78,8 @@ export function Sidebar({
   }, [pendingDelete, refreshTemplates, showToast]);
 
   return (
-    <aside className={styles.sidebar}>
-      <div className={styles.nav}>
+    <aside className="flex flex-col min-h-0 bg-surface border-r border-line">
+      <div className="flex flex-col gap-[3px] pt-3 px-2.5 pb-2 border-b border-line">
         <NavLink
           href="/"
           icon={<Upload size={17} />}
@@ -94,10 +108,20 @@ export function Sidebar({
         />
       </div>
 
-      <div className={styles.section}>
+      <div
+        className={cn(
+          "flex items-center justify-between",
+          "pt-3 px-3.5 pb-2",
+          "text-ink-3 text-[12px] font-semibold tracking-[0.06em] uppercase"
+        )}
+      >
         <span>Templates</span>
         <button
-          className={styles.add}
+          className={cn(
+            "w-[22px] h-[22px] rounded-[4px] grid place-items-center cursor-pointer",
+            "border border-line bg-surface-2 text-ink-2",
+            "hover:bg-white hover:border-line-strong hover:text-ink"
+          )}
           title="New template (save one from the review screen)"
           aria-label="New template"
           disabled
@@ -106,11 +130,13 @@ export function Sidebar({
         </button>
       </div>
 
-      <div className={styles.templates}>
+      <div className="flex-1 overflow-auto px-2 pb-3">
         {templatesLoading ? (
           <TemplateListSkeleton />
         ) : templates.length === 0 ? (
-          <p className={styles.empty}>No templates yet. Save one after reviewing a parse.</p>
+          <p className="py-[14px] px-2.5 text-ink-4 text-[11.5px] leading-[1.4]">
+            No templates yet. Save one after reviewing a parse.
+          </p>
         ) : (
           templates.map((t) => (
             <TemplateCard
@@ -146,7 +172,8 @@ interface TemplateCardProps {
 /**
  * Template card with a hover-revealed delete action. The card body is a
  * `role="button"` div (not a `<button>`) so we can nest the trash
- * `<button>` without producing invalid HTML.
+ * `<button>` without producing invalid HTML. `group` lets the nested delete
+ * button respond to card-level hover/focus-within.
  */
 function TemplateCard({ template, active, onPick, onRequestDelete }: TemplateCardProps) {
   const handleKey = (e: React.KeyboardEvent<HTMLDivElement>) => {
@@ -163,28 +190,55 @@ function TemplateCard({ template, active, onPick, onRequestDelete }: TemplateCar
 
   return (
     <div
-      className={cn(styles.tpl, active && styles.tplActive)}
       role="button"
       tabIndex={0}
       onClick={onPick}
       onKeyDown={handleKey}
+      className={cn(
+        "group relative w-full mb-[3px]",
+        "flex flex-col gap-1",
+        "rounded-md py-2.5 px-3 cursor-pointer text-left",
+        "border",
+        active
+          ? "bg-accent-weak border-accent-border"
+          : "border-transparent bg-transparent hover:bg-surface-2",
+        "focus-visible:outline-[2px_solid_var(--color-accent)] focus-visible:outline-offset-1"
+      )}
     >
-      <div className={styles.tplRow}>
-        <span className={styles.tplName}>{template.name}</span>
+      <div className="flex items-center justify-between gap-2">
+        <span
+          className={cn(
+            "font-medium text-[13.5px]",
+            active ? "text-accent-ink" : "text-ink"
+          )}
+        >
+          {template.name}
+        </span>
         <button
           type="button"
-          className={styles.tplDelete}
           title="Delete template"
           aria-label={`Delete template ${template.name}`}
           onClick={handleDeleteClick}
+          className={cn(
+            "shrink-0 w-[22px] h-[22px] p-0 grid place-items-center",
+            "border-0 bg-transparent rounded-[4px] cursor-pointer",
+            "text-ink-4 opacity-0",
+            "transition-[opacity,background-color,color] duration-[120ms]",
+            "group-hover:opacity-100 group-focus-within:opacity-100",
+            "hover:bg-err-weak hover:text-err",
+            "focus-visible:opacity-100",
+            "focus-visible:outline-[2px_solid_var(--color-err)] focus-visible:outline-offset-1"
+          )}
         >
           <Trash2 size={13} aria-hidden="true" />
         </button>
       </div>
-      <div className={styles.tplMeta}>
+      <div className="flex gap-2 text-[12px] text-ink-3">
         <span>{template.kind}</span>
-        <span className={styles.mono}>· {template.runs} runs</span>
-        <span className={styles.tplTime}>{formatRelativeTime(template.createdAt)}</span>
+        <span className="font-mono">· {template.runs} runs</span>
+        <span className="ml-auto text-ink-4">
+          {formatRelativeTime(template.createdAt)}
+        </span>
       </div>
     </div>
   );
@@ -202,12 +256,26 @@ function NavLink({ href, icon, label, count, active }: NavLinkProps) {
   return (
     <Link
       href={href}
-      className={cn(styles.navItem, active && styles.navItemActive)}
       aria-current={active ? "page" : undefined}
+      className={cn(
+        NAV_ITEM_BASE,
+        active ? "bg-accent-weak text-accent-ink" : "text-ink-2"
+      )}
     >
       {icon}
       <span>{label}</span>
-      {count !== undefined && <span className={styles.count}>{count}</span>}
+      {count !== undefined && (
+        <span
+          className={cn(
+            NAV_COUNT_BASE,
+            active
+              ? "bg-white border-accent-border text-accent-ink"
+              : "bg-surface-2 border-line text-ink-3"
+          )}
+        >
+          {count}
+        </span>
+      )}
     </Link>
   );
 }
@@ -216,13 +284,13 @@ function NavLink({ href, icon, label, count, active }: NavLinkProps) {
 function TemplateListSkeleton() {
   return (
     <div
-      className={styles.templateSkeletonList}
+      className="flex flex-col gap-[3px]"
       aria-busy="true"
       aria-label="Loading templates"
     >
       {Array.from({ length: 3 }).map((_, i) => (
-        <div key={i} className={styles.templateSkeletonCard}>
-          <div className={styles.templateSkeletonRow}>
+        <div key={i} className="py-2.5 px-3 flex flex-col gap-1.5">
+          <div className="flex items-center justify-between gap-2">
             <Skeleton width="60%" height={13} />
             <Skeleton width={6} height={6} radius={999} />
           </div>
@@ -248,13 +316,17 @@ function NavButtonPlaceholder({
   return (
     <button
       type="button"
-      className={styles.navItem}
+      className={cn(NAV_ITEM_BASE, "text-ink-2")}
       title={title}
       disabled
     >
       {icon}
       <span>{label}</span>
-      {count !== undefined && <span className={styles.count}>{count}</span>}
+      {count !== undefined && (
+        <span className={cn(NAV_COUNT_BASE, "bg-surface-2 border-line text-ink-3")}>
+          {count}
+        </span>
+      )}
     </button>
   );
 }

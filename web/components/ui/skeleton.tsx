@@ -1,13 +1,12 @@
 import * as React from "react";
 import { cn } from "@/lib/cn";
-import styles from "./skeleton.module.css";
 
 type CssLen = string | number;
 
 interface SkeletonProps extends React.HTMLAttributes<HTMLDivElement> {
   width?: CssLen;
   height?: CssLen;
-  /** Corner radius override. Defaults to 4px via the stylesheet. */
+  /** Corner radius override. Defaults to 4px. */
   radius?: CssLen;
 }
 
@@ -35,7 +34,13 @@ export function Skeleton({
   return (
     <div
       aria-hidden="true"
-      className={cn(styles.skeleton, className)}
+      className={cn(
+        "bg-line rounded-[4px]",
+        "animate-skeleton-pulse",
+        // WCAG 2.3.3 — respect reduced-motion preference
+        "motion-reduce:animate-none motion-reduce:opacity-75",
+        className
+      )}
       style={mergedStyle}
       {...rest}
     />
