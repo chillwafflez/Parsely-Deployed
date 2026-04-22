@@ -2,9 +2,9 @@
 
 import * as React from "react";
 import { AlertTriangle } from "lucide-react";
+import { cn } from "@/lib/cn";
 import { percentBBoxToPolygonInches } from "@/lib/bbox";
 import type { DrawResult, DrawnRect } from "@/lib/types";
-import styles from "./drawing-layer.module.css";
 
 interface DrawingLayerProps {
   pageNumber: number;
@@ -78,7 +78,7 @@ export function DrawingLayer({
   return (
     <div
       ref={ref}
-      className={styles.layer}
+      className="absolute inset-0 z-10 cursor-crosshair select-none"
       role="presentation"
       onMouseDown={handleMouseDown}
       onMouseMove={handleMouseMove}
@@ -87,7 +87,11 @@ export function DrawingLayer({
     >
       {preview && (
         <div
-          className={styles.preview}
+          className={cn(
+            "absolute pointer-events-none rounded-[2px]",
+            "border-[1.5px] border-dashed border-accent",
+            "bg-[color-mix(in_oklab,var(--color-accent)_12%,transparent)]"
+          )}
           style={{
             left: `${preview.x}%`,
             top: `${preview.y}%`,
@@ -97,7 +101,16 @@ export function DrawingLayer({
         />
       )}
       {!drag && (
-        <div className={styles.hint} role="status">
+        <div
+          role="status"
+          className={cn(
+            "absolute top-2.5 left-1/2 -translate-x-1/2",
+            "inline-flex items-center gap-1.5",
+            "py-[5px] px-2.5 rounded-full pointer-events-none",
+            "text-[11.5px] text-white",
+            "bg-[color-mix(in_oklab,var(--color-ink)_85%,transparent)]"
+          )}
+        >
           <AlertTriangle size={12} />
           Click and drag over the region you want to capture
         </div>

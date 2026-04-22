@@ -51,7 +51,7 @@ Stretch features under consideration (post-demo): Microsoft Teams app integratio
 |---|---|
 | Framework | **Next.js 15** (App Router) + **React 19** |
 | Language | TypeScript (strict) |
-| Styling | **Tailwind CSS v4** (`@theme` directive in `globals.css`, no `tailwind.config.ts`) + **CSS Modules** for component-scoped complex styles (bbox color-mix, keyframes, popovers, modals) |
+| Styling | **Tailwind CSS v4** (`@theme` directive in `globals.css`, no `tailwind.config.ts`) — primary styling system since Day 9 migration. Plain `cn()` wrapper over `clsx` (no `tailwind-merge`, no `tailwind-variants` — both were tried and rejected). CSS Modules only survive in `bounding-box-overlay.module.css` + `inspector/*.module.css` + `app/page.module.css` pending the remainder of the Day 9 migration (Sub-batch B). |
 | Icons | `lucide-react` |
 | PDF rendering | **`react-pdf` 9.2.1** + **`pdfjs-dist` 4.x** (NOT 10.x — see "Known gotchas") |
 | Utility | `clsx` via `lib/cn.ts` |
@@ -121,44 +121,74 @@ document-parsing/
 │   │   └── page.tsx                   Landing route: UploadStage + parsing overlay +
 │   │                                  inline upload-error banner, navigates to /documents/[id]
 │   ├── components/                                Organized by domain/type since 2026-04-22.
-│   │   ├── ui/                                    Generic primitives, zero domain knowledge
-│   │   │   ├── button.{tsx,module.css}            Reusable btn (4 variants) + Kbd
-│   │   │   ├── error-banner.{tsx,module.css}      Persistent inline banner w/ role="alert" +
-│   │   │   │                                       dismiss. Reserved for non-transient errors.
-│   │   │   ├── skeleton.{tsx,module.css}          Shimmer primitive w/ prefers-reduced-motion guard
-│   │   │   ├── toast.{tsx,module.css}             Auto-dismissing confirmation notification
-│   │   │   └── type-popover.{tsx,module.css}      Portal menu for data-type selection
-│   │   ├── layout/                                App chrome shared across all routes
-│   │   │   ├── app-shell.{tsx,module.css}         Persistent chrome: Topbar + Sidebar + single
-│   │   │   │                                       Toast root; owns useTemplates + activeDocument
-│   │   │   ├── sidebar.{tsx,module.css}           Client component w/ next/link + usePathname
-│   │   │   │                                       active states; hover-revealed template trash,
-│   │   │   │                                       DeleteTemplateModal orchestration
-│   │   │   └── topbar.{tsx,module.css}            Includes matched-template badge pill
+│   │   │                                          Tailwind-migrated files listed as `.tsx` only;
+│   │   │                                          remaining `.tsx + .module.css` pairs are pending
+│   │   │                                          Day 9 Sub-batch B / inspector migration.
+│   │   ├── ui/                                    Generic primitives, zero domain knowledge — MIGRATED
+│   │   │   ├── button.tsx                         Reusable btn (4 variants) + Kbd. Variant-specific
+│   │   │   │                                       classes inlined with ternaries in cn() (no
+│   │   │   │                                       tailwind-variants — plain conditional arrays).
+│   │   │   ├── error-banner.tsx                   Persistent inline banner w/ role="alert" + dismiss.
+│   │   │   ├── skeleton.tsx                       Shimmer via `animate-skeleton-pulse` (@theme token);
+│   │   │   │                                       honors `motion-reduce:` variant.
+│   │   │   ├── toast.tsx                          Auto-dismissing notification; uses `animate-toast-in`.
+│   │   │   └── type-popover.tsx                   Portal menu for data-type selection.
+│   │   ├── layout/                                App chrome shared across all routes — MIGRATED
+│   │   │   ├── app-shell.tsx                      Persistent chrome: Topbar + Sidebar + single Toast
+│   │   │   │                                       root; owns useTemplates + activeDocument.
+│   │   │   ├── sidebar.tsx                        Client component w/ next/link + usePathname active
+│   │   │   │                                       states; hover-revealed template trash via Tailwind
+│   │   │   │                                       `group` / `group-hover:` pattern.
+│   │   │   └── topbar.tsx                         Matched-template badge pill. Brand mark gradient +
+│   │   │                                          inset shadow kept as `MARK_STYLE` inline CSS (too
+│   │   │                                          gnarly as a class list for a one-off element).
 │   │   ├── document/                              Document viewing, uploading, and listing
-│   │   │   ├── bounding-box-overlay.{tsx,module.css}  Confidence-colored bboxes w/ hover tags
-│   │   │   ├── document-list.{tsx,module.css}     Documents history table w/ drag-drop upload,
-│   │   │   │                                       template badges, skeleton, empty state
+│   │   │   ├── bounding-box-overlay.{tsx,module.css}  **NOT YET MIGRATED** — Sub-batch B. This is the
+│   │   │   │                                       one file doing percentage-based absolute-positioned
+│   │   │   │                                       overlay math (spatially load-bearing), so it was
+│   │   │   │                                       intentionally isolated from the Sub-batch A pass.
+│   │   │   ├── document-list.tsx                  Documents history table w/ drag-drop upload,
+│   │   │   │                                       template badges, skeleton, empty state. Row hover
+│   │   │   │                                       uses `group` + `group-hover:bg-accent-weak` on each
+│   │   │   │                                       td; bottom-border collapses on last row via
+│   │   │   │                                       `group-last:border-b-0`. Shared `BODY_CELL` const.
 │   │   │   ├── document-loader.tsx                Owns `/documents/[id]` state machine
-│   │   │   │                                       (loading|ready|not-found|error), syncs shell
-│   │   │   ├── document-pane.{tsx,module.css}     Toolbar + zoom + dynamic import boundary + draw mode
-│   │   │   ├── document-placeholder.{tsx,module.css} DocumentLoadingSkeleton (matches ReviewStage
-│   │   │   │                                       layout) + DocumentErrorPanel + NotFoundPanel
-│   │   │   ├── drawing-layer.{tsx,module.css}     Full-page mouse capture for rectangle draw
-│   │   │   ├── parsing-overlay.{tsx,module.css}   Progress card
-│   │   │   ├── pdf-document-view.{tsx,module.css} react-pdf integration (SSR-skipped via next/dynamic)
-│   │   │   ├── review-stage.{tsx,module.css}      Composes DocumentPane + Inspector, owns doc
+│   │   │   │                                       (loading|ready|not-found|error), syncs shell. No
+│   │   │   │                                       styles of its own.
+│   │   │   ├── document-pane.tsx                  Toolbar + zoom + dynamic import boundary + draw mode
+│   │   │   ├── document-placeholder.tsx           DocumentLoadingSkeleton (matches ReviewStage layout)
+│   │   │   │                                       + DocumentErrorPanel + NotFoundPanel. Shared
+│   │   │   │                                       `PANEL_CLASS` / `LINK_CLASS` constants.
+│   │   │   ├── drawing-layer.tsx                  Full-page mouse capture for rectangle draw. Preview
+│   │   │   │                                       rect keeps inline `style` for percent positioning
+│   │   │   │                                       (dynamic values); colors as arbitrary `color-mix`.
+│   │   │   ├── parsing-overlay.tsx                Progress card. Step state (done|current|pending)
+│   │   │   │                                       uses mutually exclusive ternaries so no conflicting
+│   │   │   │                                       utilities land in the className. Uses
+│   │   │   │                                       `animate-blink` @theme token.
+│   │   │   ├── pdf-document-view.tsx              react-pdf integration (SSR-skipped via next/dynamic).
+│   │   │   │                                       The `.react-pdf__Page__canvas` vendor override
+│   │   │   │                                       moved to `globals.css` as a plain global rule
+│   │   │   │                                       (consistent with the existing `::-webkit-scrollbar`
+│   │   │   │                                       block). Idiomatic for third-party class overrides.
+│   │   │   ├── review-stage.tsx                   Composes DocumentPane + Inspector, owns doc
 │   │   │   │                                       mutations. Controlled — receives doc + updater
 │   │   │   │                                       from DocumentLoader.
-│   │   │   └── upload-stage.{tsx,module.css}      Dropzone w/ drag-drop
-│   │   ├── inspector/                             Right-pane field editor
+│   │   │   └── upload-stage.tsx                   Dropzone w/ drag-drop. Dot-grid `radial-gradient`
+│   │   │                                          background kept as `STAGE_BG` inline style — too
+│   │   │                                          verbose as a Tailwind arbitrary value.
+│   │   ├── inspector/                             Right-pane field editor — **NOT YET MIGRATED**
 │   │   │   ├── inspector.{tsx,module.css}         Composed pane: header, stats, search, pills,
-│   │   │   │                                       grouped fields, rich empty states, footer
-│   │   │   └── inspector-field.{tsx,module.css}   Individual field row with inline edit + popover
-│   │   └── modal/                                 Portal dialogs
-│   │       ├── delete-template-modal.{tsx,module.css} Destructive-action confirm modal (alertdialog)
-│   │       ├── name-field-modal.{tsx,module.css}  Naming modal after drawing (autofocus, Esc/backdrop)
-│   │       └── save-template-modal.{tsx,module.css} Template save UI (name, kind, desc, applyTo, rules)
+│   │   │   │                                       grouped fields, rich empty states, footer.
+│   │   │   └── inspector-field.{tsx,module.css}   Individual field row with inline edit + popover.
+│   │   └── modal/                                 Portal dialogs — MIGRATED
+│   │       ├── delete-template-modal.tsx          Destructive-action confirm modal (alertdialog).
+│   │       │                                       Uses `animate-scrim-fade` + `animate-modal-pop`
+│   │       │                                       @theme tokens; local `DANGER_BTN_CLASS` const.
+│   │       ├── name-field-modal.tsx               Naming modal after drawing (autofocus, Esc/backdrop);
+│   │       │                                       shared `LABEL_CLASS` / `INPUT_CLASS` / `SEG_*` consts.
+│   │       └── save-template-modal.tsx            Template save UI (name, kind, desc, applyTo, rules);
+│   │                                              shares the same const patterns + `TEXTAREA_CLASS`.
 │   ├── lib/
 │   │   ├── api-client.ts              upload/list/get doc, PATCH/POST/DELETE field, template CRUD
 │   │   ├── app-shell-context.ts       React context exposing showToast, refreshTemplates,
@@ -343,11 +373,39 @@ Import path updates: 6 `@/components/*` imports across `app/**` + 13 cross-subfo
 
 **Committed state after Day 8:** pending user commit at end of session. Suggested message: `refactor: organize components/ into feature subfolders`.
 
+### Day 9 🔄 *(in progress)* — CSS Modules → Tailwind v4 migration *(2026-04-22)*
+
+Pulled forward from Phase-2 (deferred) to Phase-1 (pre-demo) after user flagged intermittent "random FOUC / broken styling" bugs during local dev — the HMR race between Next.js 15 + pnpm + CSS Modules was producing occasional missing-styles reloads. Moving to Tailwind compiles to a single deterministic stylesheet, eliminating the race. Demo date **moved from 2026-04-27 to 2026-04-29** to accommodate the migration.
+
+**Constraints the user set:**
+- UI must remain **pixel-identical** — user explicitly likes the current look. Visual regressions are unacceptable. Tailwind compiles to CSS; mechanical translation can preserve exact output, but requires discipline.
+- Clean, readable, well-structured, industry-standard code.
+- **Plain `cn()` only** — no `tailwind-variants`, no `tailwind-merge`. Tried both; user asked "are they necessary?" and we agreed they were not. `lib/cn.ts` stays as a pure `clsx` wrapper.
+- **No shadcn/Radix.** Claude chose against it — forcing component structure changes through shadcn primitives risked visual drift on an app with a strong custom aesthetic. Plain Tailwind utilities against our existing component structure is safer.
+
+**Migration order:** `ui/` → `layout/` → `modal/` → `document/` (split into Sub-batch A and B) → `inspector/` → full-app verification.
+
+**Completed this session:**
+- **`ui/` (5 files, 5 `.module.css` deleted)** — button, error-banner, skeleton, toast, type-popover. Established the base translation patterns: variant classes inlined via ternary conditionals in `cn()`, `hover:enabled:` for `:hover:not(:disabled)`, `motion-reduce:` variant for WCAG 2.3.3, arbitrary outline shorthand `outline-[2px_solid_var(--color-err)]`.
+- **`layout/` (3 files, 3 `.module.css` deleted)** — app-shell, sidebar, topbar. Replaced `.parent:hover .child` descendant selectors with Tailwind `group` / `group-hover:` / `group-focus-within:` pattern. Brand mark (topbar) gradient + inset shadow extracted to a `MARK_STYLE` inline-style constant (too gnarly as arbitrary classes, rendered once).
+- **`modal/` (3 files, 3 `.module.css` deleted)** — delete-template-modal, name-field-modal, save-template-modal. Promoted `scrim-fade` and `modal-pop` keyframes to `@theme` in `globals.css` as single-source `--animate-*` tokens. Established file-scoped class constants pattern (`LABEL_CLASS`, `INPUT_CLASS`, `SEG_BASE/ACTIVE/INACTIVE`, `TEXTAREA_CLASS`, `DANGER_BTN_CLASS`) for class lists repeated within one file.
+- **`document/` Sub-batch A (9 files, 8 `.module.css` deleted — loader had none)** — upload-stage, document-list, document-placeholder, document-pane, review-stage, pdf-document-view, parsing-overlay, drawing-layer, document-loader (no-op). Most intricate move: the react-pdf `:global(.react-pdf__Page__canvas)` CSS Modules selector → plain global rule in `globals.css` (idiomatic vendor-class override). Row hover in document-list table uses `group` on `<tr>` + `group-hover:bg-accent-weak` on each `<td>` rather than stacking `hover:[&>td]:` arbitrary variants. `radial-gradient` dropzone background (upload-stage) kept as `STAGE_BG` inline style — the stacked shorthand was too ugly as a Tailwind arbitrary. `parsing-overlay` step states use mutually exclusive ternaries (`state === "done" ? "text-ink" : state === "current" ? "..." : "text-ink-3"`) to avoid CSS source-order conflicts from stacking conflicting utilities (we can't rely on twMerge to resolve them). `blink` keyframe promoted to `@theme` as `--animate-blink` for the current-step pulsing dot.
+
+**Build + lint state after Sub-batch A:** `pnpm build` clean in 3.0s, `pnpm lint` zero warnings. All five migrated batches produced identical clean builds (2.5s–3.6s each).
+
+**Still to migrate (Day 9 remaining work):**
+- **`document/` Sub-batch B** — `bounding-box-overlay.tsx` + `.module.css`. Isolated intentionally because it's the one file doing spatial math (percent-based `top`/`left`/`width`/`height` absolute positioning derived from `polygonToPercentBBox`). Translation needs a side-by-side visual check of bbox alignment before and after — the rest of Sub-batch A was forgiving of minor class misses, but this one isn't. Inline `style` for positioning should stay; only the class-driven styling (border color, confidence tints, hover tag) migrates.
+- **`inspector/` (2 files)** — inspector.tsx + inspector-field.tsx. Largest remaining surface area. Type popover + inline-edit styling interact with the already-migrated `ui/type-popover.tsx`, so patterns are established.
+- **`app/page.module.css`** — thin home-page banner-slot wrapper. Check if still needed (may have become vestigial after Sub-batch A changes to `UploadStage`).
+- **Final cleanup** — verify zero `.module.css` files remain in components/, confirm `global.d.ts`'s `declare module "*.css"` can be dropped (only needed for the `import styles from "./x.module.css"` pattern; the `./globals.css` side-effect import still requires it, so likely keep).
+
+**Committed state through Day 9:** uncommitted. Suggested message for the current progress: `refactor: migrate ui/layout/modal + document sub-batch A to Tailwind v4`. Let user decide whether to commit now or hold for the full migration.
+
 ---
 
 ## 6. What's next — pre-demo runway
 
-Demo is 2026-04-27 (5 days out as of 2026-04-22). All three core value props are functional (parse, correct, teach-via-template), URL routing works, history page exists, template deletion works, polish pass done, components/ folder reorganized. Remaining work is demo-content and nice-to-haves.
+Demo is **2026-04-29** (7 days out as of 2026-04-22 — moved back from 2026-04-27 to accommodate the Day 9 styling migration). All three core value props are functional (parse, correct, teach-via-template), URL routing works, history page exists, template deletion works, polish pass done, components/ folder reorganized, Tailwind migration in progress.
 
 ### Demo-critical (do first)
 
@@ -364,14 +422,7 @@ Demo is 2026-04-27 (5 days out as of 2026-04-22). All three core value props are
 
 ### Deferred to Phase 2 (post-demo)
 
-- **Migrate CSS Modules → Tailwind + regular CSS (potentially with shadcn/ui).** The original Day 2 plan was "Tailwind + CSS Modules for complex cases," but the port of the Claude Design mock pulled almost everything into `.module.css` (23 files today). User confirmed (2026-04-22) they want a **full migration post-demo**, not incremental. Key notes for the migrating session:
-  - **Stack fit is good.** shadcn/ui officially supports Tailwind v4 + React 19 (verified via context7), which matches our stack exactly. Components are copy-in source code (not an npm dep), using Radix UI primitives for accessibility — we'd own the code.
-  - **Design will NOT change.** Tailwind compiles to CSS; pixel-identical output is achievable with careful translation. Visual regressions are a translation risk, not a design shift.
-  - **What stays in CSS, not Tailwind:** `@keyframes` (define in `globals.css`), gnarly pseudo-element composition (e.g., the confidence-bbox `::before` with `color-mix()`), any rule too verbose as Tailwind arbitrary values. Tailwind's `motion-safe` / `motion-reduce` variants can replace the `prefers-reduced-motion` `@media` block we have in Skeleton.
-  - **Candidate shadcn replacements for existing components:** `<Dialog>` (Radix) for our three modal/*.tsx files, `<Toast>` for `ui/toast.tsx`, `<Button>` for `ui/button.tsx`, `<Skeleton>` for `ui/skeleton.tsx`. `<Alert>` for `ui/error-banner.tsx`. Inspector / DocumentPane / sidebar template card etc. stay custom (no shadcn primitive fits).
-  - **Scope estimate:** 23 components × roughly 30–100 CSS rules each to translate + visually verify. Not a 1-day job. Budget 2–3 days for a careful rollout with side-by-side diffing.
-  - **Migration order when we tackle it:** `ui/` primitives first (smallest, highest blast radius if wrong), then `modal/` (swap to shadcn Dialog), then `layout/`, then `inspector/`, then `document/` (most complex — PDF layering, bbox overlay, drawing layer).
-  - **Decision point at start of migration:** "full rewrite from scratch using shadcn primitives" vs. "mechanical translation of existing CSS Modules to Tailwind utilities keeping our custom components." The former is cleaner long-term, the latter is a safer diff to review.
+- **~~Migrate CSS Modules → Tailwind.~~** Pulled into Phase 1 as Day 9 (in progress as of 2026-04-22 — see §5 Day 9 and §11 "Where we left off"). Decision against shadcn/Radix stands: forcing our custom components through shadcn primitives risked visual drift. Plain Tailwind v4 + `cn()` (clsx-only) is the final shape. `tailwind-variants` and `tailwind-merge` were both tried and rejected.
 - **Revert button.** Proper implementation needs either re-running Azure DI (expensive + discards user-drawn fields) or storing original values per field (schema change + per-field history). Neither is cheap. The demo never needs to revert.
 - **Microsoft Teams tab wrapper.** Re-skin with Fluent UI likely required. ~1 day.
 - **E-signature routing via Teams.** Adobe Sign / Microsoft Syntex integration.
@@ -432,6 +483,30 @@ Demo is 2026-04-27 (5 days out as of 2026-04-22). All three core value props are
 **Skeleton primitives must respect `prefers-reduced-motion`.** `@media (prefers-reduced-motion: reduce) { .skeleton { animation: none; opacity: 0.75; } }` — holds visible placeholder without strobing. WCAG 2.3.3. Applied globally via `skeleton.module.css`.
 
 **Inline error banner vs toast — pick one per error.** Toasts (`showToast`) are transient confirmations (field saved, template created, "matched to X"). Inline `<ErrorBanner>` (role="alert") is for persistent errors the user must acknowledge (upload failures, fetch errors). Never double-announce — it reads as noise.
+
+### Tailwind v4 (Day 9 migration lessons)
+
+**`cn()` is clsx-only — no twMerge.** `lib/cn.ts` wraps `clsx` directly. That means conflicting Tailwind utilities stacked in the same className (e.g., `text-ink-2 text-accent-ink`) both land in the output and resolve by CSS source order — which is unpredictable. **Fix pattern: mutually exclusive ternaries.** Write `active ? "text-accent-ink" : "text-ink-2"` so only one utility lands. Never stack conflicting width/color/bg utilities hoping twMerge will sort them — it won't, we don't use it.
+
+**`outline-<N> outline-<color>` doesn't render an outline.** Tailwind v4 sets width and color but `outline-style` defaults to `none` — net effect is invisible. For focus-visible rings on destructive/form elements, use the arbitrary shorthand: `outline-[2px_solid_var(--color-err)]`, `outline-[2px_solid_var(--color-accent)]`. Discovered when the DeleteTemplateModal focus ring didn't render.
+
+**Underscores in arbitrary values become spaces.** `text-[color-mix(in_oklab,var(--color-accent)_88%,black)]` — the `_` between tokens is compiled to a space. If a literal `_` is needed (e.g., a vendor class like `react-pdf__Page__canvas`), escape with `\_` inside the arbitrary, **or** sidestep by writing it as a plain global rule in `globals.css`. We chose the latter for `react-pdf__Page__canvas` — idiomatic for vendor overrides, consistent with `::-webkit-scrollbar` already there.
+
+**`hover:enabled:` is the canonical `:hover:not(:disabled)`.** Use `hover:enabled:bg-surface-2` for interactive elements that can be disabled. Avoids needing a custom variant.
+
+**`motion-reduce:` replaces the `@media (prefers-reduced-motion: reduce)` block.** `motion-reduce:animate-none motion-reduce:opacity-75` on the Skeleton. WCAG 2.3.3 behavior preserved without a bespoke CSS Modules rule.
+
+**Animations live in `@theme` as `--animate-<name>`.** Pattern: add `--animate-foo: foo 0.2s ease;` inside `@theme { ... }`, declare the `@keyframes foo { ... }` nested in the same `@theme` block. Tailwind generates the `animate-foo` utility automatically. Used for `skeleton-pulse`, `toast-in`, `scrim-fade`, `modal-pop`, `blink`. Do not re-declare these keyframes per module — single source of truth.
+
+**`group` / `group-hover:` / `group-focus-within:` replaces `.parent:hover .child` descendant selectors.** Sidebar template card's hover-reveal trash, document-list row hover tint, and nested-button reveals all use this. For "last in a list" styling (e.g., drop the bottom border on the final row), `group-last:` works on the child if the parent carries `group` — we use this for `BODY_CELL` in document-list.
+
+**Complex one-off values stay as inline `style={...}`.** The dot-grid `radial-gradient` in upload-stage (`STAGE_BG`), the brand-mark gradient + inset shadow in topbar (`MARK_STYLE`), and the dynamic bbox/draw-preview percentages all use inline style. Cramming them into `bg-[...]` arbitraries makes the className unreadable. Rule of thumb: if the value has commas/parens and isn't reused, inline-style it as a module-scoped constant.
+
+**Form elements need explicit `font-ui`.** Browsers apply UA default system fonts to `<input>` / `<select>` / `<button>` / `<textarea>`. The CSS Modules approach used `font: inherit`; the Tailwind equivalent is a class `font-ui` that sets `var(--font-ui)`. Forgetting this makes inputs render in system-ui while the rest of the app uses Inter.
+
+**File-scoped class constants are the abstraction layer.** No shared cross-file "class library" (YAGNI). Per-file consts like `LABEL_CLASS`, `INPUT_CLASS`, `SEG_BASE/ACTIVE/INACTIVE`, `NAV_ITEM_BASE`, `DANGER_BTN_CLASS`, `BODY_CELL`, `CARD_WRAPPER`, `PANEL_CLASS` capture class lists that repeat within one component. If a pattern shows up in three files, consider lifting — otherwise keep local.
+
+**Vendor class overrides live in `globals.css`, not Tailwind.** The `:global(.react-pdf__Page__canvas) { display: block }` rule moved out of CSS Modules into `globals.css` as a plain global. Same pattern used for `::-webkit-scrollbar`. Keeps third-party class names out of our component JSX.
 
 ### Environment
 
@@ -507,32 +582,57 @@ The UI draws 1:1 from the Claude Design mock exported to `Document Parsing Servi
 
 ## 11. Where we left off
 
-**2026-04-22 end of Day 8 session:**
+**2026-04-22 end of Day 9 mid-migration session** (same calendar day as Day 8 — two sessions back-to-back):
 
-- Days 1–8 complete. Day 7 (URL routing, history page, polish pass, template delete) was committed at the start of this session per the user. Day 8 (components/ folder reorg) pending commit at end of session.
-- `pnpm build` and `pnpm lint` both clean after the reorg — zero TS errors, zero ESLint warnings. Git detected all moves as `renamed:` entries so history is preserved.
-- Demo loop unchanged from end-of-Day-7 state — pure organizational refactor. Full click-through still works: land on `/` → upload → `/documents/[id]` → review with bboxes → correct → draw → save template → re-upload same vendor → auto-match → rule apply. Refresh-safe throughout.
-- **Locked-in Phase-2 commitment (2026-04-22):** user wants a **full migration from CSS Modules to Tailwind + regular CSS**, potentially adopting shadcn/ui + Radix UI primitives. Explicitly deferred to post-demo — see §6 "Deferred to Phase 2" for the detailed game plan. Don't start this before 2026-04-27.
-- `appsettings.json` still has empty `Key`; User Secrets holds the live key.
-- `.npmrc` in `web/` still enforces pnpm hoist for pdfjs-dist.
-- No schema changes this session — SQLite DB carries forward cleanly.
+- Days 1–8 complete. Day 9 (Tailwind migration) is **in progress**, not complete. Stopped mid-migration at user's explicit request to defer the remaining document/ + inspector/ work.
+- **Demo moved to 2026-04-29** (was 2026-04-27) to absorb the migration's scope. Confirmed by user at start of Day 9 session.
+- **Why the migration got pulled forward:** user reported occasional "weird HTML website with no styling" flashes during local dev — the HMR race between Next.js 15 + pnpm dev server + CSS Modules hash handling. Tailwind compiles to a single deterministic stylesheet, eliminating the race. Not a speculative refactor; a real stability fix.
+
+### Day 9 migration status (as of this session end)
+
+| Batch | Files | `.module.css` deleted | Status |
+|---|---|---|---|
+| `ui/` | button, error-banner, skeleton, toast, type-popover | 5 | ✅ |
+| `layout/` | app-shell, sidebar, topbar | 3 | ✅ |
+| `modal/` | delete-template-modal, name-field-modal, save-template-modal | 3 | ✅ |
+| `document/` Sub-batch A (low-risk) | upload-stage, document-list, document-placeholder, document-pane, review-stage, pdf-document-view, parsing-overlay, drawing-layer, document-loader | 8 (loader had none) | ✅ |
+| `document/` Sub-batch B | `bounding-box-overlay.tsx` + `.module.css` | — | ⏳ pending |
+| `inspector/` | inspector, inspector-field | — | ⏳ pending |
+| `app/` | `page.module.css` (home-page banner slot) | — | ⏳ pending — check if still referenced |
+| Final cleanup | verify zero leftover `.module.css`, evaluate `global.d.ts` | — | ⏳ pending |
+
+**Every completed batch passed clean `pnpm build` (2.5–3.6s) and `pnpm lint` (zero warnings).** No TypeScript errors. No user-reported visual regressions (user confirmed visual parity after each batch's review).
+
+### Key Day 9 decisions + patterns (see also §7 Tailwind v4 section)
+
+- **No shadcn/Radix.** Plain Tailwind utilities against our existing component structure.
+- **No `tailwind-variants`, no `tailwind-merge`.** Plain `cn()` (`clsx` wrapper).
+- **Mutually exclusive ternaries for conflicting utilities** (since we can't rely on twMerge to resolve conflicts).
+- **Animations in `@theme` as `--animate-*` tokens** (skeleton-pulse, toast-in, scrim-fade, modal-pop, blink).
+- **File-scoped class constants** for repeated class lists within one file (`LABEL_CLASS`, `INPUT_CLASS`, `SEG_BASE/ACTIVE/INACTIVE`, `TEXTAREA_CLASS`, `NAV_ITEM_BASE`, `DANGER_BTN_CLASS`, `BODY_CELL`, `CARD_WRAPPER`, `PANEL_CLASS`, `LINK_CLASS`, `MARK_STYLE`, `STAGE_BG`).
+- **`group` / `group-hover:` / `group-last:` / `group-focus-within:`** replaces `.parent:hover .child` descendant selectors.
+- **Complex single-use values stay as inline `style={...}` constants** — radial-gradient dot background, gradient brand mark, dynamic bbox percent positions.
+- **Vendor class overrides in `globals.css`, not Tailwind** — `.react-pdf__Page__canvas` is a plain global rule alongside `::-webkit-scrollbar`.
 
 ### First actions for the next session
 
-1. **Ask if the Day 8 reorg commit landed.** Suggested message: `refactor: organize components/ into feature subfolders`.
-2. **Confirm demo-runway priority from §6.** Default is still seed data (§6 item 1) — the history page looks empty without prior uploads, and the cross-vendor template-matching story needs at least one vendor appearing twice. Present the three seeder options (startup seeder / JSON snapshots / shell script) and let user pick.
-3. **Do NOT start the Tailwind/shadcn migration before the demo.** User explicitly scoped it post-2026-04-27. If asked about styling changes in the interim, propose the smallest-surface fix in the existing `.module.css`.
-4. Before any schema change, tell the user to `rm api/app.db*`. The demo-runway items in §6 don't require any.
-5. `use context7` for any library-specific uncertainty (user consistently reminds).
+1. **Ask the user whether to commit current Day 9 progress now or wait for the full migration.** Suggested intermediate message: `refactor: migrate ui/layout/modal + document sub-batch A to Tailwind v4`.
+2. **Tackle `document/` Sub-batch B next** (`bounding-box-overlay.tsx`). Isolate this change, build after, and visually verify bbox alignment against a real uploaded PDF before declaring done. The inline `style` percent positioning should stay; only class-driven styling migrates. Reference the file's existing use of `polygonToPercentBBox` to understand the position math before touching anything.
+3. **Then `inspector/`** — largest remaining surface. Type popover interactions with `ui/type-popover.tsx` are already migrated, so the inspector-field popover glue should be straightforward.
+4. **Then `app/page.module.css` check** — may have become vestigial after upload-stage's Sub-batch A change. If nothing references it, delete.
+5. **After full migration: final sweep.** Verify zero `.module.css` under `components/`, check whether `global.d.ts`'s `declare module "*.css";` ambient can be narrowed or removed (the `./globals.css` side-effect import still needs it, so likely keep as-is but document why).
+6. **Confirm UI pixel parity.** User will review after each batch — this has been the rhythm throughout Day 9. Keep doing it; don't batch multiple folders into a single review.
+7. **Do NOT let the migration leak into feature work.** Seed data (§6 item 1) is still a real demo-runway gap. After Day 9 finishes, pivot to seeding before polishing more.
+8. `use context7` for any Tailwind v4 / Next.js 15 / React 19 uncertainty (user consistently reminds).
 
 ### Open deferred items (for reference)
 
-- **Seed demo documents** — §6 item 1, highest priority for visual demo impact.
+- **Finish Day 9 migration** — Sub-batch B + inspector/ + final cleanup. Highest priority; blocks any further styling work.
+- **Seed demo documents** — §6 item 1, highest post-migration priority.
 - **Search / filter on documents table** — §6 item 2.
 - **Template-delete staleness** — §6 item 3; minor, affects only the open-document topbar badge.
 - **Line Items table special-render** — Phase 2 per long-standing note.
 - **Revert button** — Phase 2 per Day 7 triage; needs per-field history or re-run of Azure DI.
-- **Full Tailwind + shadcn/ui migration** — Phase 2, locked in 2026-04-22. Detailed plan in §6 Deferred.
 
 ---
 
@@ -560,7 +660,13 @@ The UI draws 1:1 from the Claude Design mock exported to `Document Parsing Servi
 - Don't override only `color` + `filter` on a primary-button hover — must explicitly set `background` to beat the generic `.btn:hover` (Day 7B bug lesson).
 - Don't double-dispatch `setActiveDocument(null)` across separate effects with the same deps — split sync-on-state and clear-on-unmount into two effects to avoid a null-flash through the topbar (Day 7A lesson).
 - Don't call `notFound()` inside a `useEffect`. Call it during render from a client component — Next.js' App Router requires that (Day 7A lesson).
+- Don't reintroduce `tailwind-variants` or `tailwind-merge`. Both were tried on 2026-04-22 and rejected — `cn()` stays as a pure `clsx` wrapper (Day 9 lesson).
+- Don't adopt shadcn/ui or Radix primitives. Considered and declined — the custom aesthetic outweighs the reusability win, and forcing our components through shadcn structure risks visual drift (Day 9 decision).
+- Don't stack conflicting Tailwind utilities in the same className (e.g., `text-ink-2` + `text-accent-ink`). Without twMerge, CSS source order decides the winner unpredictably. Use mutually exclusive ternaries (Day 9 lesson).
+- Don't use `outline-<N> outline-<color>` alone for focus rings — `outline-style` defaults to `none` so nothing renders. Use `outline-[2px_solid_var(--color-x)]` arbitrary shorthand (Day 9 lesson).
+- Don't re-declare keyframe animations inside individual CSS Modules. Promote them to `@theme` in `globals.css` as `--animate-<name>` tokens so they auto-generate a utility (Day 9 pattern).
+- Don't cram long multi-value CSS (radial-gradient stacks, composite box-shadows) into `className="bg-[...]"` arbitraries. Extract to a module-scoped inline-style constant — readability wins (Day 9 pattern).
 
 ---
 
-_Last updated: 2026-04-22 after Day 8 (components/ folder reorg into ui/layout/document/inspector/modal subfolders). All Day 7 work committed by start of session; Day 8 commit pending. Locked in post-demo Phase-2 plan for full CSS Modules → Tailwind + shadcn/ui migration (see §6 Deferred). Demo target 2026-04-27 (5 days out)._
+_Last updated: 2026-04-22 mid-Day-9 (Tailwind migration in progress). Completed batches: `ui/`, `layout/`, `modal/`, `document/` Sub-batch A (9/10 files). Pending: `document/` Sub-batch B (bounding-box-overlay), `inspector/`, `app/page.module.css`, final cleanup. Day 8 commit + Day 9 progress both uncommitted. shadcn/Radix and `tailwind-variants` / `tailwind-merge` all evaluated and rejected — plain Tailwind v4 + `cn()` (clsx) is the final shape. Demo moved to 2026-04-29 (7 days out)._

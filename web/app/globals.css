@@ -46,6 +46,7 @@
   --animate-toast-in: toast-in 0.2s ease;
   --animate-scrim-fade: scrim-fade 0.15s ease;
   --animate-modal-pop: modal-pop 0.16s ease;
+  --animate-blink: blink 1s infinite;
 
   @keyframes skeleton-pulse {
     0%,
@@ -76,6 +77,19 @@
       opacity: 0;
     }
   }
+
+  @keyframes blink {
+    50% {
+      opacity: 0.3;
+    }
+  }
+}
+
+/* react-pdf injects a <canvas class="react-pdf__Page__canvas">. Its UA default
+   is inline-block, which leaves a baseline whitespace gap below the canvas in
+   our page wrapper — force block to eliminate that gap. */
+.react-pdf__Page__canvas {
+  display: block;
 }
 
 html,

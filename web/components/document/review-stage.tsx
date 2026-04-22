@@ -21,7 +21,6 @@ import type {
   FieldUpdate,
   TemplateApplyTo,
 } from "@/lib/types";
-import styles from "./review-stage.module.css";
 
 interface ReviewStageProps {
   document: DocumentResponse;
@@ -203,7 +202,7 @@ export function ReviewStage({ document, onDocumentChange }: ReviewStageProps) {
   }, [document.fields, document.fileName]);
 
   return (
-    <div className={styles.wrapper}>
+    <div className="flex flex-1 min-w-0 min-h-0 bg-bg">
       <DocumentPane
         fileUrl={pdfUrl}
         fileName={document.fileName}

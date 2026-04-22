@@ -7,7 +7,6 @@ import "react-pdf/dist/Page/TextLayer.css";
 import type { DrawResult, ExtractedField } from "@/lib/types";
 import { BoundingBoxOverlay } from "./bounding-box-overlay";
 import { DrawingLayer } from "./drawing-layer";
-import styles from "./pdf-document-view.module.css";
 
 /**
  * PDF.js worker config. Per react-pdf docs this MUST live in the same module
@@ -86,32 +85,43 @@ export default function PdfDocumentView({
   );
 
   return (
-    <div className={styles.stage}>
+    <div className="flex flex-col items-center gap-4 p-6 min-h-full">
       <Document
         file={fileUrl}
         onLoadSuccess={handleDocumentLoad}
         onLoadError={(err) => setLoadError(err.message)}
-        loading={<div className={styles.status}>Loading PDF…</div>}
+        loading={
+          <div className="py-12 px-6 text-center text-ink-3 text-[13px]">
+            Loading PDF…
+          </div>
+        }
         error={
-          <div className={styles.error}>
+          <div className="py-12 px-6 text-center text-err text-[13px]">
             {loadError ?? "Failed to load PDF."}
           </div>
         }
-        noData={<div className={styles.status}>No PDF specified.</div>}
+        noData={
+          <div className="py-12 px-6 text-center text-ink-3 text-[13px]">
+            No PDF specified.
+          </div>
+        }
       >
         {Array.from({ length: numPages }, (_, idx) => {
           const pageNumber = idx + 1;
           const dims = pageDims.get(pageNumber);
 
           return (
-            <div key={pageNumber} className={styles.pageWrapper}>
+            <div
+              key={pageNumber}
+              className="relative rounded-[2px] bg-white shadow-md overflow-hidden"
+            >
               <Page
                 pageNumber={pageNumber}
                 width={BASE_PAGE_WIDTH * zoom}
                 onLoadSuccess={handlePageLoad}
                 renderTextLayer={false}
                 renderAnnotationLayer={false}
-                className={styles.page}
+                className="block"
               />
               {dims && !drawMode && (
                 <BoundingBoxOverlay

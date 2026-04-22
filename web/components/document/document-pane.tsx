@@ -4,15 +4,19 @@ import * as React from "react";
 import dynamic from "next/dynamic";
 import { FileText, Square, ZoomIn, ZoomOut } from "lucide-react";
 import { Button, Kbd } from "../ui/button";
+import { cn } from "@/lib/cn";
 import type { DrawResult, ExtractedField } from "@/lib/types";
-import styles from "./document-pane.module.css";
 
 // Dynamically import the PDF rendering module with ssr: false. Per react-pdf
 // docs, the worker config must live in the same module as <Document>/<Page>
 // and must not be SSR'd in Next.js.
 const PdfDocumentView = dynamic(() => import("./pdf-document-view"), {
   ssr: false,
-  loading: () => <div className={styles.loading}>Loading PDF viewer…</div>,
+  loading: () => (
+    <div className="py-12 px-6 text-center text-ink-3 text-[13px]">
+      Loading PDF viewer…
+    </div>
+  ),
 });
 
 interface DocumentPaneProps {
@@ -77,16 +81,31 @@ export function DocumentPane({
   }, [drawMode, toggleDrawMode]);
 
   return (
-    <section className={styles.pane} aria-label="Document viewer">
-      <header className={styles.toolbar}>
-        <div className={styles.title}>
+    <section
+      aria-label="Document viewer"
+      className="flex flex-col flex-1 min-w-0 min-h-0 bg-bg"
+    >
+      <header
+        className={cn(
+          "flex items-center gap-1.5",
+          "py-2 px-3 bg-surface border-b border-line"
+        )}
+      >
+        <div className="flex items-center gap-2 min-w-0">
           <FileText size={15} />
-          <span className={styles.fileName}>{fileName}</span>
+          <span
+            className={cn(
+              "font-mono text-[12px] font-medium text-ink-2",
+              "overflow-hidden text-ellipsis whitespace-nowrap"
+            )}
+          >
+            {fileName}
+          </span>
           {numPages !== null && (
-            <span className={styles.meta}>· {numPages}p</span>
+            <span className="text-ink-4 text-[11px] font-mono">· {numPages}p</span>
           )}
         </div>
-        <div className={styles.spacer} />
+        <div className="flex-1" />
         <Button
           variant="ghost"
           aria-label="Zoom out"
@@ -95,7 +114,10 @@ export function DocumentPane({
         >
           <ZoomOut size={14} />
         </Button>
-        <span className={styles.zoomLabel} aria-live="polite">
+        <span
+          aria-live="polite"
+          className="font-mono text-[11px] text-ink-3 w-10 text-center"
+        >
           {Math.round(zoom * 100)}%
         </span>
         <Button
@@ -106,7 +128,7 @@ export function DocumentPane({
         >
           <ZoomIn size={14} />
         </Button>
-        <div className={styles.divider} />
+        <div className="w-px h-5 bg-line mx-1" />
         <Button
           active={drawMode}
           onClick={toggleDrawMode}
@@ -119,7 +141,7 @@ export function DocumentPane({
         </Button>
       </header>
 
-      <div className={styles.stage}>
+      <div className="flex-1 overflow-auto min-h-0">
         <PdfDocumentView
           fileUrl={fileUrl}
           fields={fields}

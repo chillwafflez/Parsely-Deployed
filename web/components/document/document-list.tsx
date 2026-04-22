@@ -9,7 +9,6 @@ import { Skeleton } from "../ui/skeleton";
 import { cn } from "@/lib/cn";
 import { uploadDocument } from "@/lib/api-client";
 import type { DocumentResponse, DocumentSummary } from "@/lib/types";
-import styles from "./document-list.module.css";
 
 interface DocumentListProps {
   documents: DocumentSummary[];
@@ -37,16 +36,67 @@ function relativeTime(iso: string): string {
   return new Date(iso).toLocaleDateString();
 }
 
-const STATUS_CONFIG: Record<string, { label: string; cls: string }> = {
-  Completed: { label: "Completed", cls: styles.statusOk },
-  Failed: { label: "Failed", cls: styles.statusErr },
-  Analyzing: { label: "Analyzing…", cls: styles.statusWarn },
-  Uploaded: { label: "Queued", cls: styles.statusNeutral },
+// Bordered card wrapper shared by the table and the loading skeleton so they
+// share the same visual frame.
+const CARD_WRAPPER = cn(
+  "bg-surface border border-line rounded-lg shadow-sm overflow-hidden"
+);
+
+// Shared padding for <th> and <td> so the header row and body rows line up.
+const CELL_PADDING = "py-2.5 px-3.5";
+
+// Shared <td> styling: padding, text styling, bottom border (dropped on the
+// last row via `group-last:`), and hover tint driven by the row-level `group`.
+const BODY_CELL = cn(
+  CELL_PADDING,
+  "text-[13px] text-ink-2 align-middle",
+  "border-b border-line group-last:border-b-0",
+  "group-hover:bg-accent-weak"
+);
+
+// Colored dot ::before pseudo shared by every status variant.
+const PILL_DOT_BEFORE = cn(
+  "before:content-[''] before:w-1.5 before:h-1.5 before:rounded-full",
+  "before:bg-current before:shrink-0"
+);
+
+const STATUS_STYLES: Record<string, { label: string; cls: string }> = {
+  Completed: {
+    label: "Completed",
+    cls: "bg-ok-weak text-ok",
+  },
+  Failed: {
+    label: "Failed",
+    cls: "bg-err-weak text-err",
+  },
+  Analyzing: {
+    label: "Analyzing…",
+    cls: "bg-warn-weak text-warn",
+  },
+  Uploaded: {
+    label: "Queued",
+    cls: "bg-surface-2 text-ink-3 border border-line",
+  },
 };
 
 function StatusPill({ status }: { status: string }) {
-  const cfg = STATUS_CONFIG[status] ?? { label: status, cls: styles.statusNeutral };
-  return <span className={cn(styles.statusPill, cfg.cls)}>{cfg.label}</span>;
+  const cfg =
+    STATUS_STYLES[status] ?? {
+      label: status,
+      cls: "bg-surface-2 text-ink-3 border border-line",
+    };
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center gap-1.5 py-0.5 px-2 rounded-full",
+        "text-[11.5px] font-medium whitespace-nowrap",
+        PILL_DOT_BEFORE,
+        cfg.cls
+      )}
+    >
+      {cfg.label}
+    </span>
+  );
 }
 
 function DocumentRow({
@@ -57,33 +107,55 @@ function DocumentRow({
   onClick: () => void;
 }) {
   return (
-    <tr className={styles.row} onClick={onClick}>
-      <td>
-        <div className={styles.cellName}>
-          <FileText size={14} className={styles.fileIcon} aria-hidden="true" />
-          <span className={styles.fileName} title={doc.fileName}>
+    <tr
+      onClick={onClick}
+      className="group cursor-pointer transition-[background-color] duration-100"
+    >
+      <td className={BODY_CELL}>
+        <div className="flex items-center gap-2 max-w-[360px]">
+          <FileText
+            size={14}
+            aria-hidden="true"
+            className="shrink-0 text-ink-4"
+          />
+          <span
+            title={doc.fileName}
+            className="overflow-hidden text-ellipsis whitespace-nowrap font-medium text-ink"
+          >
             {doc.fileName}
           </span>
         </div>
       </td>
-      <td>
+      <td className={BODY_CELL}>
         <StatusPill status={doc.status} />
       </td>
-      <td>
+      <td className={BODY_CELL}>
         {doc.templateName ? (
-          <span className={styles.templateBadge} title={doc.templateName}>
+          <span
+            title={doc.templateName}
+            className={cn(
+              "inline-flex items-center gap-[5px] max-w-[200px]",
+              "py-0.5 px-2 rounded-full",
+              "bg-accent-weak border border-accent-border",
+              "text-[11.5px] font-medium text-accent-ink"
+            )}
+          >
             <LayoutTemplate size={11} aria-hidden="true" />
-            <span className={styles.templateBadgeText}>{doc.templateName}</span>
+            <span className="overflow-hidden text-ellipsis whitespace-nowrap">
+              {doc.templateName}
+            </span>
           </span>
         ) : (
-          <span className={styles.dash}>—</span>
+          <span className="text-ink-4">—</span>
         )}
       </td>
-      <td className={styles.colRight}>
-        <span className={styles.mono}>{doc.fieldCount}</span>
+      <td className={cn(BODY_CELL, "text-right")}>
+        <span className="font-mono text-[12px] text-ink-3">
+          {doc.fieldCount}
+        </span>
       </td>
-      <td>
-        <div className={styles.cellTime}>
+      <td className={BODY_CELL}>
+        <div className="flex items-center gap-[5px] text-ink-3 text-[12px] whitespace-nowrap">
           <Clock size={11} aria-hidden="true" />
           {relativeTime(doc.createdAt)}
         </div>
@@ -94,12 +166,19 @@ function DocumentRow({
 
 function EmptyState({ onUploadClick }: { onUploadClick: () => void }) {
   return (
-    <div className={styles.empty}>
-      <div className={styles.emptyIcon}>
+    <div className="flex flex-col items-center justify-center gap-4 py-20 px-6 text-center">
+      <div
+        className={cn(
+          "w-14 h-14 grid place-items-center rounded-xl",
+          "bg-accent-weak border border-accent-border text-accent-ink"
+        )}
+      >
         <FileText size={24} aria-hidden="true" />
       </div>
-      <h2>No documents yet</h2>
-      <p>
+      <h2 className="m-0 text-[17px] font-semibold tracking-[-0.01em] text-ink">
+        No documents yet
+      </h2>
+      <p className="m-0 max-w-[300px] text-ink-3 text-[13px] leading-[1.55]">
         Drop a file anywhere on this page, or upload one to start parsing.
       </p>
       <Button variant="primary" onClick={onUploadClick}>
@@ -120,12 +199,18 @@ function LoadingSkeleton() {
   ];
   return (
     <div
-      className={styles.skeletonWrapper}
       aria-busy="true"
       aria-label="Loading documents"
+      className={CARD_WRAPPER}
     >
       {widths.map((cols, i) => (
-        <div key={i} className={styles.skeletonRow}>
+        <div
+          key={i}
+          className={cn(
+            "flex items-center gap-4 py-3 px-3.5",
+            i < widths.length - 1 && "border-b border-line"
+          )}
+        >
           {cols.map((w, j) => (
             <Skeleton key={j} width={w} height={13} />
           ))}
@@ -195,13 +280,20 @@ export function DocumentList({
 
   return (
     <div
-      className={styles.page}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
+      className="relative flex flex-1 flex-col min-h-0 bg-bg"
     >
-      <header className={styles.pageHeader}>
-        <h1 className={styles.pageTitle}>Documents</h1>
+      <header
+        className={cn(
+          "flex items-center gap-3 shrink-0",
+          "py-3 px-6 bg-surface border-b border-line"
+        )}
+      >
+        <h1 className="flex-1 m-0 text-[15px] font-semibold text-ink tracking-[-0.01em]">
+          Documents
+        </h1>
         <Button variant="primary" onClick={() => inputRef.current?.click()}>
           <Upload size={13} />
           Upload new
@@ -210,26 +302,26 @@ export function DocumentList({
           ref={inputRef}
           type="file"
           accept=".pdf,.png,.jpg,.jpeg,.tif,.tiff"
-          className={styles.hiddenInput}
+          className="hidden"
           onChange={handleInputChange}
           aria-label="Upload document"
         />
       </header>
 
-      <div className={styles.content}>
+      <div className="flex-1 overflow-y-auto py-5 px-6">
         {uploadError && (
           <ErrorBanner
             title="Upload failed"
             message={uploadError}
             onDismiss={onDismissUploadError}
-            className={styles.errorBannerSpacing}
+            className="mb-4"
           />
         )}
         {error && (
           <ErrorBanner
             title="Couldn't load documents"
             message={error}
-            className={styles.errorBannerSpacing}
+            className="mb-4"
           />
         )}
 
@@ -238,15 +330,15 @@ export function DocumentList({
         ) : documents.length === 0 ? (
           <EmptyState onUploadClick={() => inputRef.current?.click()} />
         ) : (
-          <div className={styles.tableWrapper}>
-            <table className={styles.table}>
-              <thead>
+          <div className={CARD_WRAPPER}>
+            <table className="w-full border-collapse">
+              <thead className="bg-surface-2">
                 <tr>
-                  <th>Name</th>
-                  <th>Status</th>
-                  <th>Template</th>
-                  <th className={styles.colRight}>Fields</th>
-                  <th>Uploaded</th>
+                  <Th>Name</Th>
+                  <Th>Status</Th>
+                  <Th>Template</Th>
+                  <Th align="right">Fields</Th>
+                  <Th>Uploaded</Th>
                 </tr>
               </thead>
               <tbody>
@@ -264,13 +356,47 @@ export function DocumentList({
       </div>
 
       {isDragging && (
-        <div className={styles.dropOverlay} aria-hidden="true">
-          <div className={styles.dropMessage}>
+        <div
+          aria-hidden="true"
+          className={cn(
+            "absolute inset-0 z-10 grid place-items-center pointer-events-none",
+            "bg-accent-weak border-2 border-dashed border-accent"
+          )}
+        >
+          <div
+            className={cn(
+              "flex flex-col items-center gap-2.5",
+              "py-6 px-9 rounded-lg",
+              "bg-surface shadow-md",
+              "text-accent-ink text-[15px] font-semibold"
+            )}
+          >
             <Upload size={24} />
             <span>Drop to upload</span>
           </div>
         </div>
       )}
     </div>
+  );
+}
+
+function Th({
+  children,
+  align,
+}: {
+  children: React.ReactNode;
+  align?: "right";
+}) {
+  return (
+    <th
+      className={cn(
+        CELL_PADDING,
+        "text-[10.5px] font-semibold uppercase tracking-[0.055em]",
+        "text-ink-3 border-b border-line whitespace-nowrap",
+        align === "right" ? "text-right" : "text-left"
+      )}
+    >
+      {children}
+    </th>
   );
 }
