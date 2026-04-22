@@ -104,39 +104,70 @@ document-parsing/
 │
 ├── web/                               Next.js 15 (:3000)
 │   ├── .npmrc                         pnpm hoist-pattern for pdfjs-dist — REQUIRED
+│   ├── global.d.ts                    Ambient `declare module "*.css";` so VS Code's TS
+│   │                                  language server accepts the side-effect `./globals.css`
+│   │                                  import. Next.js handles it at build time anyway.
 │   ├── app/
-│   │   ├── app.module.css             shell grid layout
+│   │   ├── documents/
+│   │   │   ├── [id]/
+│   │   │   │   ├── loading.tsx        Route convention: renders DocumentLoadingSkeleton
+│   │   │   │   ├── not-found.tsx      Route convention: renders DocumentNotFoundPanel
+│   │   │   │   └── page.tsx           Unwraps `params` Promise via React 19 `use()`,
+│   │   │   │                          then renders <DocumentLoader documentId>
+│   │   │   └── page.tsx               Documents history list + upload orchestration
 │   │   ├── globals.css                Tailwind v4 @theme tokens (OKLCH)
-│   │   ├── layout.tsx                 next/font loaders for Inter + JetBrains Mono
-│   │   └── page.tsx                   phase state machine (upload | parsing | review), useTemplates
+│   │   ├── layout.tsx                 Root layout (server) — wraps children in <AppShell>
+│   │   ├── page.module.css            Thin home-page wrapper styles (banner slot)
+│   │   └── page.tsx                   Landing route: UploadStage + parsing overlay +
+│   │                                  inline upload-error banner, navigates to /documents/[id]
 │   ├── components/
+│   │   ├── app-shell.{tsx,module.css}             Persistent chrome: Topbar + Sidebar + single
+│   │   │                                           Toast root; owns useTemplates + activeDocument
 │   │   ├── bounding-box-overlay.{tsx,module.css}  Confidence-colored bboxes w/ hover tags
 │   │   ├── button.{tsx,module.css}                Reusable btn (4 variants) + Kbd
+│   │   ├── delete-template-modal.{tsx,module.css} Destructive-action confirm modal (alertdialog)
+│   │   ├── document-list.{tsx,module.css}         Documents history table w/ drag-drop upload,
+│   │   │                                           template badges, skeleton, empty state
+│   │   ├── document-loader.tsx                    Owns `/documents/[id]` state machine
+│   │   │                                           (loading|ready|not-found|error), syncs shell
 │   │   ├── document-pane.{tsx,module.css}         Toolbar + zoom + dynamic import boundary + draw mode
+│   │   ├── document-placeholder.{tsx,module.css}  DocumentLoadingSkeleton (matches ReviewStage
+│   │   │                                           layout) + DocumentErrorPanel + NotFoundPanel
 │   │   ├── drawing-layer.{tsx,module.css}         Full-page mouse capture for rectangle draw
+│   │   ├── error-banner.{tsx,module.css}          Persistent inline banner w/ role="alert" +
+│   │   │                                           dismiss. Reserved for non-transient errors.
 │   │   ├── inspector-field.{tsx,module.css}       Individual field row with inline edit + popover
 │   │   ├── inspector.{tsx,module.css}             Composed right-pane: header, stats, search, pills,
-│   │   │                                           grouped fields, footer
+│   │   │                                           grouped fields, rich empty states, footer
 │   │   ├── name-field-modal.{tsx,module.css}      Naming modal after drawing (autofocus, Esc/backdrop)
 │   │   ├── parsing-overlay.{tsx,module.css}       Progress card
 │   │   ├── pdf-document-view.{tsx,module.css}     react-pdf integration (SSR-skipped via next/dynamic)
-│   │   ├── review-stage.{tsx,module.css}          Composes DocumentPane + Inspector, owns doc mutations
+│   │   ├── review-stage.{tsx,module.css}          Composes DocumentPane + Inspector, owns doc
+│   │   │                                           mutations. Controlled — receives doc + updater
+│   │   │                                           from DocumentLoader.
 │   │   ├── save-template-modal.{tsx,module.css}   Template save UI (name, kind, desc, applyTo, rules)
-│   │   ├── sidebar.{tsx,module.css}               Nav + template library (real API-fed list)
+│   │   ├── sidebar.{tsx,module.css}               Client component w/ next/link + usePathname
+│   │   │                                           active states; hover-revealed template trash,
+│   │   │                                           DeleteTemplateModal orchestration
+│   │   ├── skeleton.{tsx,module.css}              Shimmer primitive w/ prefers-reduced-motion guard
 │   │   ├── toast.{tsx,module.css}
-│   │   ├── topbar.{tsx,module.css}
+│   │   ├── topbar.{tsx,module.css}                Includes matched-template badge pill
 │   │   ├── type-popover.{tsx,module.css}          Portal menu for data-type selection
 │   │   └── upload-stage.{tsx,module.css}          Dropzone w/ drag-drop
 │   ├── lib/
 │   │   ├── api-client.ts              upload/list/get doc, PATCH/POST/DELETE field, template CRUD
+│   │   ├── app-shell-context.ts       React context exposing showToast, refreshTemplates,
+│   │   │                              setActiveDocument via useAppShell() hook
 │   │   ├── bbox.ts                    polygon→percent + percent→polygon math, confidenceLevel
 │   │   ├── cn.ts                      clsx wrapper
 │   │   ├── constants.ts               FIELD_TYPES, CONFIDENCE_THRESHOLDS
 │   │   ├── field-groups.ts            inferFieldGroup(name, isUserAdded?), groupFields
 │   │   ├── format.ts                  formatRelativeTime ("2h ago")
 │   │   ├── hooks/
+│   │   │   ├── use-documents.ts       Fetch document list on mount + refresh callback
 │   │   │   └── use-templates.ts       Fetch templates on mount + refresh callback
-│   │   └── types.ts                   All DTOs + view models
+│   │   └── types.ts                   All DTOs + view models (DocumentSummary now has
+│   │                                  templateName; SidebarView removed)
 │   ├── next.config.ts                 Minimal (reactStrictMode only — user stripped earlier helpers)
 │   ├── postcss.config.mjs             @tailwindcss/postcss
 │   └── package.json                   Pinned versions per "Tech stack"
@@ -242,28 +273,78 @@ Azure DI polygon unit for PDFs is **inches**. pdf.js viewport at scale 1 returns
 - **Key correctness property:** confidence = 0 for unfound regions → Inspector shows red flag + Missing Req. counter, honest signaling vs. the earlier misleading "100% green empty" state
 - Verified end-to-end: custom ThankYouMessage field gets real text extracted on next upload; an edited PDF with erased PurchaseOrder correctly shows as required + empty + red
 
-**Current committed state: Days 1–5 on main via single commit `"feat: Day 1-3 — upload, parse, PDF viewer with bboxes"` + a Day 4-5 commit user made. Days 6 + 6b are working but uncommitted at session end.**
+**Committed state through Day 6b:** Day 6 + 6b committed after end-of-Day-6 session.
+
+### Day 7 ✅ — URL routing, AppShell, history page, polish pass, template deletion
+
+Done in three sub-sessions over 2026-04-21. All four core "demo polish" goals hit. No schema changes.
+
+**Session 7A — URL routing + AppShell + centralized toast** *(commit `7da4ab0`)*
+- New dynamic route `/documents/[id]` — `params` is now a `Promise` in Next.js 15, unwrapped in a client `page.tsx` via React 19 `use()`. Keys `<ReviewStage>` on `document.id` to force remount on navigation.
+- `DocumentLoader` owns the canonical document state as a discriminated union (`loading | ready | not-found | error`). Calls `notFound()` during render (not in an effect) per Next.js docs. Uses a `cancelled` flag in the async `useEffect` to discard stale responses.
+- `ReviewStage` became **controlled**: receives `document` + `onDocumentChange` updater from the loader rather than holding its own canonical state. Lets the shell stay in sync with every field edit / template save without a prop-drilling round-trip.
+- New `AppShell` wraps every route (`app/layout.tsx`) with Topbar + Sidebar + a **single** Toast root. Exposes `showToast`, `refreshTemplates`, `setActiveDocument` via `AppShellContext` + `useAppShell()` hook. Fixes the Day 4-noted issue where `HomePage` and `ReviewStage` each owned their own Toast and could visually stack.
+- Topbar gained a matched-template badge pill (LayoutTemplate icon + name) — renders when `activeDocument.templateName` is non-null.
+- `/documents/[id]/loading.tsx` and `not-found.tsx` route conventions added for instant route-transition feedback.
+- Two separate effects in DocumentLoader: one to **sync** the shell on every state change, one to **clear on unmount**. Prevents a brief `null` flash through the topbar during edit re-renders.
+- VS Code TS language server error on `./globals.css` side-effect import fixed by adding `web/global.d.ts` with `declare module "*.css";`.
+- Structural type workaround kept in `pdf-document-view.tsx` for pnpm's isolated-store duplicate-copy `#private` brand clash on `PDFPageProxy`.
+
+**Session 7B — Documents history page (`/documents`) + route-based sidebar nav**
+- Backend: `DocumentSummary` DTO now returns `TemplateName` (EF Core LEFT JOIN via `d.Template != null ? d.Template.Name : null`). No schema change.
+- New `DocumentList` component: drag-drop upload anywhere on page, table with filename / status pill / template badge / field count / relative upload time; loading skeleton, empty state with CTA, inline fetch-error banner.
+- `useDocuments()` hook mirrors `useTemplates()` pattern.
+- **Routing refactor**: `/` reverted to the original UploadStage landing experience (dot-grid dropzone). `/documents` is the new history page. `/documents/[id]` is the existing detail page.
+- Sidebar rewritten to use `next/link` + `usePathname()` for active state (industry-standard Next.js App Router pattern from the docs). Parse (→`/`) and Documents (→`/documents`) are real `<Link>`s with `aria-current="page"`. Queue / Templates / Settings became disabled placeholder buttons (Phase 2).
+- Dead `view` / `onChangeView` / `SidebarView` state machine removed from AppShell, Sidebar, and `lib/types.ts` — the router is now the single source of truth for active-section highlighting.
+- **Bug fix**: `.primary:hover` in `button.module.css` was only overriding `filter` + `color`, not `background`. The generic `.btn:hover` rule then set `background: var(--color-surface-2)` (near-white), producing white-on-white text. Fixed with an explicit darker `color-mix(in oklab, var(--color-accent) 88%, black)` background + `:not(:disabled)` guard.
+
+**Session 7C — Polish pass: Skeleton + ErrorBanner primitives, richer empty states**
+- Two new reusable primitives:
+  - `<Skeleton>` — `width` / `height` / `radius` props, `aria-hidden`, respects `prefers-reduced-motion` (WCAG 2.3.3) by disabling the pulse and holding at 0.75 opacity.
+  - `<ErrorBanner>` — `role="alert"`, optional bold title, optional `onDismiss` (renders `×` with `aria-label`), `focus-visible` outline.
+- `/documents/[id]` loading state replaced the centered spinner with a **full layout skeleton** that mirrors ReviewStage: toolbar row, ~8.5:11 page placeholder on the left, Inspector header + 3-up stat cards + search + 5 field rows on the right. Used by both `DocumentLoader` state and the route convention `loading.tsx`.
+- Sidebar template list "Loading templates…" text replaced with 3 shimmer cards sized to match real card dimensions (no reflow on swap-in).
+- Inspector empty state split into two cases with distinct icons + copy:
+  - `fields.length === 0` → accent pen icon + "No fields extracted" + actionable hint ("Draw a box on the page to add one manually")
+  - Filtered to zero → muted search icon + "No matches" + instruction to clear the filter
+- Upload failures swapped from transient toasts to persistent `<ErrorBanner>` above the dropzone (`/`) and above the documents table (`/documents`). Banners auto-clear when the user starts a new upload attempt, or the user can dismiss with `×`. Toasts kept for successful operations (field saved, template created, "matched to X").
+- `DocumentList` refactored onto the shared primitives — removed ~35 lines of duplicated CSS (local shimmer keyframes + inline banner markup).
+- `DocumentErrorPanel` / `DocumentNotFoundPanel` "Back to upload" link now points to `/documents` (more useful destination with the list page present).
+
+**Session 7D — Template deletion UI**
+- `components/delete-template-modal.tsx` — destructive-action confirmation modal. `role="alertdialog"` with `aria-labelledby` + `aria-describedby`, portal to `document.body`, scrim click / Escape to cancel (blocked while submitting), auto-focuses the destructive button via `queueMicrotask` to avoid stray Enter-key races, grammar-correct runs copy ("1 document was…" / "N documents were…"), explains the backend SetNull semantics ("fields stay intact, but lose the template badge").
+- Template card refactored from `<button>` to `<div role="button" tabIndex={0}>` with an Enter/Space keyboard handler, so the nested trash `<button>` no longer produces invalid HTML (nested interactive content).
+- Trash icon hidden by default (`opacity: 0`), revealed on `.tpl:hover` / `.tpl:focus-within`; `.tplDelete:hover` switches to red-weak bg for destructive affordance. Keyboard users get it as soon as they tab into the card.
+- Sidebar uses `useAppShell()` for `refreshTemplates` + `showToast`. On confirm: disable button → call `deleteTemplate(id)` → close modal → refresh template list → toast "Template removed · X". Errors surface via toast, modal stays open so the user can retry.
+
+**Known minor staleness (documented, not fixed):** if the user deletes a template while viewing an affected document on `/documents/[id]`, the topbar badge and Inspector "Template: X" label remain stale until navigation. `DocumentLoader` owns the canonical document state and has no "template changed" signal. Prototype-acceptable; Phase-2 fix would add a `refreshDocument` method to `AppShellContext`.
+
+**Current committed state after Day 7:** commits on `main` up through `7da4ab0 feat: URL routing, AppShell, and centralized toast` (Session 7A). Sessions 7B / 7C / 7D were still uncommitted at end-of-session — the user typically does their own commits. Suggest three clean commits before the next session starts work:
+- `feat: documents history page with route-based sidebar nav` (7B — backend DTO, DocumentList, sidebar Link/usePathname refactor, button hover fix)
+- `feat: polish pass — skeletons, inline error banners, richer empty states` (7C)
+- `feat: template deletion UI with confirmation modal` (7D)
 
 ---
 
-## 6. What's next — Day 7
+## 6. What's next — pre-demo runway
 
-Demo is ~2026-04-27. All three core value props are functional: parse, correct, teach-via-template. Day 7 is about making the existing flow feel professional enough for external stakeholders.
+Demo is 2026-04-27 (~6 days out as of 2026-04-21). All three core value props are functional (parse, correct, teach-via-template), URL routing works, history page exists, template deletion works, polish pass done. Remaining work is demo-content and nice-to-haves.
 
-### Day 7 scope (session split recommended)
+### Demo-critical (do first)
 
-**Session A — URL routing + polish:**
-1. **URL-based routing (HIGH PRIORITY).** Add `/documents/[id]` route as a dynamic segment. `ReviewStage` becomes the page for that route; fetches document by id on mount. `/` becomes upload + list. This fixes the "refresh sends me back to upload" issue flagged during Day 4 testing — currently the phase state machine is React state only. **Demo-critical because live-demo reloads currently break the flow.**
-2. **Polish pass:**
-   - Better empty states ("No documents yet — drop one to parse")
-   - Error banners inline (not just toasts) for upload failures
-   - Consistent loading skeletons on Inspector / Sidebar
-   - One toast root at the app level — currently `HomePage` and `ReviewStage` each own one; they can overlap visually
-   - Topbar shows the matched template name inline when in review
+1. **Seed 2–3 realistic demo documents.** Currently declined in favor of polish, but the history page now looks empty without prior uploads. The cross-vendor template-matching story lands better with at least one vendor appearing twice (first upload creates template, second auto-matches) plus a second vendor that doesn't match. Options discussed:
+   - **Startup seeder** (recommended) — new `DatabaseSeeder` class that runs on `app.Start()`. If `Documents.Count == 0` and a `Seed:Enabled` config flag is true, reads PDFs from `api/samples/seed/`, runs each through `IDocumentIntelligenceService`, creates Document + Template records. One-time Azure DI cost (~$1–2), then cached forever in SQLite. Reuses the real pipeline.
+   - **Pre-captured JSON snapshots** — zero Azure calls at seed time, more upfront setup. Bulletproof for demo-day outages.
+   - **Shell script calling `/api/documents/upload`** — not idempotent, requires remembering to run it.
 
-**Session B — history + seed:**
-3. **Documents list / history page.** Table at `/` showing previously-uploaded docs (filename, createdAt, template match, field count). Click to open `/documents/[id]`. Backend already has `GET /api/documents` (lists summaries).
-4. **Seed 2–3 demo documents.** Real-looking redacted invoices with different vendors (or variants of Microsoft's sample). Demonstrates template matching across vendors, not just Contoso re-uploads.
+### Demo-nice-to-have (if time)
+
+2. **Search / filter on the documents table.** Filename search, template-match filter, sortable columns. DocumentList is presentation-only today — the table rows are static.
+3. **Fix template-delete staleness for the currently-viewed document.** Add `refreshDocument` to `AppShellContext`; DocumentLoader exposes it. Sidebar's delete handler calls it when `activeTemplateId === deletedId`.
+4. **Line Items dedicated renderer.** Azure DI's `Items` field is a list-of-dictionaries currently shown as raw content. Design mock has a mini-table in the Inspector.
+
+### Deferred to Phase 2 (post-demo)
 
 ### Deferred to Phase 2 (post-demo)
 
@@ -315,6 +396,18 @@ Demo is ~2026-04-27. All three core value props are functional: parse, correct, 
 **Optimistic update rollback pattern** (used for edit + delete in `review-stage.tsx`): capture previous state inside the `setDocument` updater, return a rollback closure, call it in the catch branch. Per-field rollback avoids reverting unrelated concurrent edits. Create is *pessimistic* because the user is already waiting on a modal submission — no flicker.
 
 **`file-name` prop on react-pdf `Page.className`.** We use the `className` prop directly; CSS Modules work but the `react-pdf__Page__canvas` child needs a `:global()` selector if you need to style it. We avoid this by controlling the canvas display with wrapper styles.
+
+**Next.js 15 dynamic `params` are a Promise.** `/documents/[id]/page.tsx` receives `params: Promise<{ id: string }>` and must unwrap with React 19's `use()` — destructuring directly throws. Kept as a client component so `use()` works naturally; server components would need the same `use()` call with `await`.
+
+**`usePathname()` requires `"use client"` at the top of the file that calls it.** Sidebar's active-state detection uses `usePathname()` + `next/link`. When rendered inside another client boundary (AppShell), it works only because the file itself is also marked client. Deriving active state from router state (not internal sidebar view state) is the industry-standard Next.js App Router pattern.
+
+**Primary button hover must re-set `background`.** The generic `.btn:hover` rule sets `background: var(--color-surface-2)` (near-white) and `color: var(--color-ink)` (dark). A `.primary:hover` that only overrides `filter` + `color` leaks the white background through → white-on-white text. `.primary:hover` must set an explicit darker accent background. Bug fixed 2026-04-21.
+
+**Nested `<button>` inside `<button>` is invalid HTML.** Template cards needed a hover-reveal trash inside a clickable card. Fix: make the outer a `<div role="button" tabIndex={0}>` with an Enter/Space keyboard handler, then nest a real `<button>` for the trash. Also applies to any future "card with multiple interactive actions" pattern.
+
+**Skeleton primitives must respect `prefers-reduced-motion`.** `@media (prefers-reduced-motion: reduce) { .skeleton { animation: none; opacity: 0.75; } }` — holds visible placeholder without strobing. WCAG 2.3.3. Applied globally via `skeleton.module.css`.
+
+**Inline error banner vs toast — pick one per error.** Toasts (`showToast`) are transient confirmations (field saved, template created, "matched to X"). Inline `<ErrorBanner>` (role="alert") is for persistent errors the user must acknowledge (upload failures, fetch errors). Never double-announce — it reads as noise.
 
 ### Environment
 
@@ -390,29 +483,30 @@ The UI draws 1:1 from the Claude Design mock exported to `Document Parsing Servi
 
 ## 11. Where we left off
 
-**2026-04-21 end of session:**
+**2026-04-21 end of Day 7 session:**
 
-- Days 1–6 complete, plus Day 6b (template rule application with layout OCR) that resolved user-observed "template matching is cosmetic" and "100% green empty placeholder" concerns
-- Full demo loop works end-to-end: upload → review with aligned bboxes → inline correct → draw to add missed field → save as template → re-upload → template rules auto-apply (type overrides, required flags, OCR-extracted custom field values)
-- Last user message confirmed: "Everything works nicely! When testing with my edited PDF, it shows the PurchaseOrder field with the Required key and 0% confidence… ThankYouMessage also now has an actual value extracted from the region I drew in the template."
-- Day 4–5 committed to main. Day 6 + 6b uncommitted at session end — **suggest user commits before next session starts work**, e.g., `git commit -m "feat: Day 6 — Save as Template + rule application with layout OCR"`
-- `appsettings.json` still has empty `Key`; User Secrets holds the live key
-- `.npmrc` in `web/` still enforces pnpm hoist
+- Days 1–7 complete. Demo loop is **refresh-safe** (URL routing), **multi-document** (history page at `/documents`), **visually polished** (skeletons, inline error banners, rich empty states), and **template lifecycle complete** (create + match + apply + delete via UI).
+- Full click-through demo: land on `/` → see upload dropzone → drop PDF → parsing overlay → auto-navigate to `/documents/[id]` → review with aligned bboxes → inline correct → draw missed field → save as template → see template in sidebar with hover-revealed trash → upload second invoice from same vendor → toast "matched to X" → template rules auto-apply. Refresh at any point preserves state.
+- All three Day 7 session lots (7A routing, 7B history, 7C polish, 7D delete) pass `pnpm build` with zero TS errors and `pnpm lint` with zero ESLint warnings.
+- **Commits status:** `7da4ab0` (Session 7A) is on main. Sessions 7B / 7C / 7D were uncommitted at end of session; user intended to commit them. Suggested three-commit split in §5 above.
+- `appsettings.json` still has empty `Key`; User Secrets holds the live key.
+- `.npmrc` in `web/` still enforces pnpm hoist for pdfjs-dist.
+- No schema changes this session — SQLite DB carries forward cleanly.
 
 ### First actions for the next session
 
-1. Ask if they committed Day 6 + 6b. If not, suggest the commit.
-2. Confirm Day 7 scope from §6. Default: start with URL routing (Session A).
-3. Before changes: if any schema change surfaces, remember to tell user to `rm api/app.db*`. Day 7 as scoped has **no** schema changes expected.
+1. **Ask if 7B / 7C / 7D are committed.** If not, suggest the three-commit split from §5.
+2. **Confirm demo-runway priority from §6.** Default is to tackle seed data (§6 item 1) — the history page looks empty without prior uploads, and the cross-vendor template-matching story needs at least one vendor appearing twice. Present the three seeder options (startup seeder / JSON snapshots / shell script) and let user pick.
+3. Before any schema change, tell the user to `rm api/app.db*`. The demo-runway items in §6 don't require any.
 4. `use context7` for any library-specific uncertainty (user consistently reminds).
 
-### Open deferred items
+### Open deferred items (for reference)
 
-- **URL routing** (Day 4 deferred → Day 7 scheduled) — this is the #1 next thing.
-- **Unified toast** (Day 4 noted — HomePage + ReviewStage each own one; can visually stack).
-- **Revert button** (Day 4 deferred → Phase 2 per Day 7 triage).
-- **Line Items table special-render.** Azure DI's `Items` field returns a list-of-dictionaries; we currently show it as a single field with raw content. Design mock has a dedicated line-items mini-table in the Inspector — not ported. Phase 2.
-- **Template deletion from sidebar UI.** Backend endpoint exists (`DELETE /api/templates/:id`). No UI for it yet. Day 7 polish nice-to-have.
+- **Seed demo documents** — §6 item 1, highest priority for visual demo impact.
+- **Search / filter on documents table** — §6 item 2.
+- **Template-delete staleness** — §6 item 3; minor, affects only the open-document topbar badge.
+- **Line Items table special-render** — Phase 2 per long-standing note.
+- **Revert button** — Phase 2 per Day 7 triage; needs per-field history or re-run of Azure DI.
 
 ---
 
@@ -432,7 +526,15 @@ The UI draws 1:1 from the Claude Design mock exported to `Document Parsing Servi
 - Don't return `TemplateSummary.RuleCount` via a post-load loop — do it in the projection query like the current code does.
 - Don't cascade-delete documents when a template is deleted — use `SetNull` on the Document→Template FK (protects history).
 - Don't use CSS shorthands if Fluent UI ever returns. (Currently out of scope since Fluent is dropped.)
+- Don't nest `<button>` inside `<button>`. Use `<div role="button" tabIndex={0}>` + Enter/Space handler when a card needs a nested interactive child (Day 7D lesson).
+- Don't duplicate error announcements. Toast **or** banner — never both for the same failure (Day 7C lesson).
+- Don't forget `prefers-reduced-motion` on animated skeletons. WCAG 2.3.3 (Day 7C lesson).
+- Don't destructure Next.js 15 dynamic `params` directly — they're a Promise, use React 19 `use()` (Day 7A lesson).
+- Don't derive active-sidebar state from internal component state when the route already tells you — use `usePathname()` + `next/link` (Day 7B lesson).
+- Don't override only `color` + `filter` on a primary-button hover — must explicitly set `background` to beat the generic `.btn:hover` (Day 7B bug lesson).
+- Don't double-dispatch `setActiveDocument(null)` across separate effects with the same deps — split sync-on-state and clear-on-unmount into two effects to avoid a null-flash through the topbar (Day 7A lesson).
+- Don't call `notFound()` inside a `useEffect`. Call it during render from a client component — Next.js' App Router requires that (Day 7A lesson).
 
 ---
 
-_Last updated: 2026-04-21 after Day 6b (template rule application with layout OCR) completed successfully. Session context at ~55% used; fresh session recommended for Day 7 work._
+_Last updated: 2026-04-21 after Day 7 complete (URL routing + history page + polish pass + template deletion UI). No schema changes this cycle. 7A committed as `7da4ab0`; 7B/7C/7D were uncommitted at session end — suggested three-commit split in §5. Demo target 2026-04-27 (~6 days out)._
