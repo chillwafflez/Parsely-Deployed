@@ -5,8 +5,11 @@ import type {
   ExtractedField,
   FieldCreate,
   FieldUpdate,
+  SpeechToken,
   Template,
   TemplateSummary,
+  VoiceFillRequest,
+  VoiceFillResponse,
 } from "./types";
 
 const API_BASE =
@@ -135,4 +138,32 @@ export async function deleteTemplate(id: string): Promise<void> {
     const body = await res.text();
     throw new Error(`Delete template failed (${res.status}): ${body || res.statusText}`);
   }
+}
+
+export async function fetchSpeechToken(): Promise<SpeechToken> {
+  const res = await fetch(`${API_BASE}/api/voice/token`, { cache: "no-store" });
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(
+      `Speech token fetch failed (${res.status}): ${body || res.statusText}`
+    );
+  }
+  return res.json();
+}
+
+export async function postVoiceFill(
+  req: VoiceFillRequest
+): Promise<VoiceFillResponse> {
+  const res = await fetch(`${API_BASE}/api/voice/fill`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(req),
+  });
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(
+      `Voice fill failed (${res.status}): ${body || res.statusText}`
+    );
+  }
+  return res.json();
 }

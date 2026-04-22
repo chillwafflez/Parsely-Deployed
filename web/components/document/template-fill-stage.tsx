@@ -9,8 +9,10 @@ import { fileUrl as apiFileUrl } from "@/lib/api-client";
 import { useAppShell } from "@/lib/app-shell-context";
 import { exportFilled } from "@/lib/exporters";
 import type { FilledField } from "@/lib/exporters";
+import { fillFromTranscript, startRecognition } from "@/lib/voice-fill";
 import type { Template } from "@/lib/types";
 import { FieldSlotOverlay } from "./field-slot-overlay";
+import { VoiceBar, type VoiceBarState, type VoiceWarning } from "./voice-bar";
 
 // Match DocumentPane's dynamic-import boundary: the react-pdf worker
 // must not be SSR'd under Next.js 15.
@@ -27,9 +29,26 @@ const ZOOM_STEP = 0.1;
 const ZOOM_MIN = 0.6;
 const ZOOM_MAX = 1.8;
 
+/** Undo window lifetime for the post-fill VoiceBar. */
+const UNDO_WINDOW_MS = 8000;
+
 interface TemplateFillStageProps {
   template: Template;
 }
+
+/** Local state machine for the voice session + post-fill undo window. */
+type VoiceState =
+  | { kind: "idle" }
+  | { kind: "listening" }
+  | { kind: "processing" }
+  | {
+      kind: "filled";
+      previousFilled: Record<string, string>;
+      changedFields: string[];
+      warnings: VoiceWarning[];
+      unmatched: string[];
+    }
+  | { kind: "error"; message: string };
 
 /**
  * Full-width fill stage reachable from the sidebar template library.
@@ -44,13 +63,40 @@ export function TemplateFillStage({ template }: TemplateFillStageProps) {
   const [filled, setFilled] = React.useState<Record<string, string>>({});
   const [activeSlotId, setActiveSlotId] = React.useState<string | null>(null);
   const [exporting, setExporting] = React.useState(false);
+  const [voiceState, setVoiceState] = React.useState<VoiceState>({ kind: "idle" });
 
-  // The template points at the document it was snapshotted from. If that
-  // document was deleted, the file URL 404s — surface a friendly panel
-  // rather than letting react-pdf render its own error.
+  // Cancel handle for an active recognition session — lives in a ref so
+  // flipping it doesn't retrigger the render that consumes voiceState.
+  const stopRecognitionRef = React.useRef<(() => void) | null>(null);
+  const undoTimerRef = React.useRef<number | null>(null);
+
   const sourcePdfUrl = template.sourceDocumentId
     ? apiFileUrl(template.sourceDocumentId)
     : null;
+
+  const clearUndoTimer = React.useCallback(() => {
+    if (undoTimerRef.current !== null) {
+      window.clearTimeout(undoTimerRef.current);
+      undoTimerRef.current = null;
+    }
+  }, []);
+
+  const scheduleUndoExpiry = React.useCallback(() => {
+    clearUndoTimer();
+    undoTimerRef.current = window.setTimeout(() => {
+      setVoiceState({ kind: "idle" });
+      undoTimerRef.current = null;
+    }, UNDO_WINDOW_MS);
+  }, [clearUndoTimer]);
+
+  // Clean up any in-flight recognition + timers if the stage unmounts.
+  React.useEffect(() => {
+    return () => {
+      clearUndoTimer();
+      stopRecognitionRef.current?.();
+      stopRecognitionRef.current = null;
+    };
+  }, [clearUndoTimer]);
 
   const handleCommit = React.useCallback(
     (ruleName: string, value: string) => {
@@ -99,6 +145,104 @@ export function TemplateFillStage({ template }: TemplateFillStageProps) {
     }
   }, [filled, showToast, sourcePdfUrl, template.name, template.rules]);
 
+  const startVoiceSession = React.useCallback(async () => {
+    // If the undo window is open, locking in the prior fill is implicit —
+    // we just transition out of "filled" before opening the new session.
+    clearUndoTimer();
+    const previousFilled = { ...filled };
+    setVoiceState({ kind: "listening" });
+
+    try {
+      const stop = await startRecognition({
+        onTranscript: async (text) => {
+          setVoiceState({ kind: "processing" });
+          try {
+            const response = await fillFromTranscript(
+              template.id,
+              text,
+              previousFilled
+            );
+
+            if (response.patches.length === 0) {
+              setVoiceState({
+                kind: "error",
+                message:
+                  response.unmatchedPhrases.length > 0
+                    ? `No fields matched: "${response.unmatchedPhrases.join(", ")}"`
+                    : "No fields matched what you said.",
+              });
+              return;
+            }
+
+            const changedFields: string[] = [];
+            setFilled((prev) => {
+              const next = { ...prev };
+              for (const patch of response.patches) {
+                next[patch.field] = patch.value;
+                changedFields.push(patch.field);
+              }
+              return next;
+            });
+
+            const warnings: VoiceWarning[] = response.patches
+              .filter((p): p is typeof p & { warning: string } => p.warning != null)
+              .map((p) => ({ field: p.field, warning: p.warning }));
+
+            setVoiceState({
+              kind: "filled",
+              previousFilled,
+              changedFields,
+              warnings,
+              unmatched: response.unmatchedPhrases,
+            });
+            scheduleUndoExpiry();
+          } catch (err) {
+            const message =
+              err instanceof Error ? err.message : "Voice fill failed";
+            setVoiceState({ kind: "error", message });
+          }
+        },
+        onError: (err) => {
+          const message =
+            err.kind === "permission-denied"
+              ? "Microphone access denied. Enable it in your browser settings."
+              : err.kind === "no-speech"
+                ? "Couldn't hear that — try again."
+                : err.kind === "network"
+                  ? "Network error — check your connection."
+                  : err.message || "Voice recognition failed.";
+          setVoiceState({ kind: "error", message });
+        },
+      });
+      stopRecognitionRef.current = stop;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Voice session failed";
+      setVoiceState({ kind: "error", message });
+    }
+  }, [clearUndoTimer, filled, scheduleUndoExpiry, template.id]);
+
+  const handleStopListening = React.useCallback(() => {
+    stopRecognitionRef.current?.();
+    stopRecognitionRef.current = null;
+    setVoiceState({ kind: "idle" });
+  }, []);
+
+  const handleUndo = React.useCallback(() => {
+    if (voiceState.kind !== "filled") return;
+    setFilled(voiceState.previousFilled);
+    setVoiceState({ kind: "idle" });
+    clearUndoTimer();
+  }, [voiceState, clearUndoTimer]);
+
+  const handleDismissVoiceBar = React.useCallback(() => {
+    setVoiceState({ kind: "idle" });
+    clearUndoTimer();
+  }, [clearUndoTimer]);
+
+  const handleRetryVoice = React.useCallback(() => {
+    void startVoiceSession();
+  }, [startVoiceSession]);
+
   const zoomOut = () =>
     setZoom((z) => Math.max(ZOOM_MIN, +(z - ZOOM_STEP).toFixed(2)));
   const zoomIn = () =>
@@ -120,11 +264,23 @@ export function TemplateFillStage({ template }: TemplateFillStageProps) {
   }
 
   const filledCount = Object.keys(filled).length;
+  const voiceActive =
+    voiceState.kind === "listening" || voiceState.kind === "processing";
+
+  const voiceBarState: VoiceBarState =
+    voiceState.kind === "filled"
+      ? {
+          kind: "filled",
+          changedFields: voiceState.changedFields,
+          warnings: voiceState.warnings,
+          unmatched: voiceState.unmatched,
+        }
+      : voiceState;
 
   return (
     <section
       aria-label="Fill from template"
-      className="flex flex-col flex-1 min-w-0 min-h-0 bg-bg"
+      className="relative flex flex-col flex-1 min-w-0 min-h-0 bg-bg"
     >
       <header
         className={cn(
@@ -176,9 +332,16 @@ export function TemplateFillStage({ template }: TemplateFillStageProps) {
         <div className="w-px h-5 bg-line mx-1" />
 
         <Button
-          disabled
-          title="Voice fill — coming in Phase 3"
-          aria-label="Voice fill (coming in Phase 3)"
+          active={voiceActive}
+          onClick={() => void startVoiceSession()}
+          disabled={voiceActive}
+          aria-label={voiceActive ? "Voice session in progress" : "Start voice fill"}
+          aria-pressed={voiceActive}
+          title={
+            voiceActive
+              ? "Voice session in progress"
+              : "Dictate field values (click then speak)"
+          }
         >
           <Mic size={14} />
           Voice
@@ -225,6 +388,17 @@ export function TemplateFillStage({ template }: TemplateFillStageProps) {
               onCommit={handleCommit}
             />
           )}
+        />
+      </div>
+
+      {/* Transient overlay — floats over the scrolling viewer, doesn't push layout. */}
+      <div className="pointer-events-none absolute inset-x-0 bottom-4 flex justify-center px-4">
+        <VoiceBar
+          state={voiceBarState}
+          onStop={handleStopListening}
+          onUndo={handleUndo}
+          onDismiss={handleDismissVoiceBar}
+          onRetry={handleRetryVoice}
         />
       </div>
     </section>

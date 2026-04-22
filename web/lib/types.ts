@@ -171,3 +171,36 @@ export interface CreateTemplatePayload {
   sourceDocumentId: string;
   ruleOverrides?: Record<string, RuleOverride>;
 }
+
+/** Response of GET /api/voice/token — short-lived JWT for the browser Speech SDK. */
+export interface SpeechToken {
+  token: string;
+  region: string;
+  /** ISO-8601 UTC timestamp after which the token must be re-fetched. */
+  expiresAt: string;
+}
+
+/** One structured field assignment the LLM produced from a transcript. */
+export interface FieldPatch {
+  /** Canonical field name, matches a TemplateFieldRule.name exactly. */
+  field: string;
+  value: string;
+  dataType: string;
+  /** Non-null when post-LLM coercion couldn't parse the value for its type. */
+  warning: string | null;
+}
+
+/** POST body for /api/voice/fill. */
+export interface VoiceFillRequest {
+  templateId: string;
+  transcript: string;
+  /** Optional current-values map so the LLM can disambiguate against context. */
+  currentValues?: Record<string, string | null>;
+}
+
+export interface VoiceFillResponse {
+  patches: FieldPatch[];
+  unmatchedPhrases: string[];
+  /** Echoed back for the client's transient "I heard: …" surface. */
+  transcript: string;
+}
