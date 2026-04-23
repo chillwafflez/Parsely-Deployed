@@ -11,8 +11,11 @@ interface FieldSlotOverlayProps {
   rules: TemplateFieldRule[];
   /** Keyed by rule name (matches the API contract for voice overrides). */
   filled: Record<string, string>;
-  /** Optional per-rule pending flag; Phase 3 voice-fill sets this. */
-  pending?: Record<string, boolean>;
+  /**
+   * Optional per-rule flag marking slots that should play the one-shot
+   * post-voice-fill flash animation. Keyed by rule name.
+   */
+  flashing?: Record<string, boolean>;
   activeSlotId: string | null;
   onSelectSlot: (ruleId: string | null) => void;
   onCommit: (ruleName: string, value: string) => void;
@@ -30,7 +33,7 @@ export function FieldSlotOverlay({
   pageHeightPoints,
   rules,
   filled,
-  pending,
+  flashing,
   activeSlotId,
   onSelectSlot,
   onCommit,
@@ -67,7 +70,7 @@ export function FieldSlotOverlay({
               id={rule.id}
               label={rule.name}
               value={filled[rule.name] ?? ""}
-              pending={pending?.[rule.name] ?? false}
+              flashing={flashing?.[rule.name] ?? false}
               selected={activeSlotId === rule.id}
               onSelect={onSelectSlot}
               onCommit={(value) => onCommit(rule.name, value)}

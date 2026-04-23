@@ -4,7 +4,6 @@ import * as React from "react";
 import { Document, Page, pdfjs } from "react-pdf";
 import "react-pdf/dist/Page/AnnotationLayer.css";
 import "react-pdf/dist/Page/TextLayer.css";
-import { cn } from "@/lib/cn";
 import type { DrawResult, ExtractedField } from "@/lib/types";
 import { BoundingBoxOverlay } from "./bounding-box-overlay";
 import { DrawingLayer } from "./drawing-layer";
@@ -44,11 +43,6 @@ interface PdfDocumentViewProps {
   drawMode: boolean;
   onDrawComplete: (result: DrawResult) => void;
   /**
-   * When true, ghosts the PDF page with reduced opacity so overlaid
-   * field slots become the visual focal point. Used by TemplateFillStage.
-   */
-  ghost?: boolean;
-  /**
    * Optional renderer that replaces the default BoundingBoxOverlay.
    * Called per page once its native dimensions are known. Ignored when
    * drawMode is active.
@@ -72,7 +66,6 @@ export default function PdfDocumentView({
   onPagesLoaded,
   drawMode,
   onDrawComplete,
-  ghost = false,
   renderPageOverlay,
 }: PdfDocumentViewProps) {
   const [numPages, setNumPages] = React.useState(0);
@@ -149,7 +142,7 @@ export default function PdfDocumentView({
                 onLoadSuccess={handlePageLoad}
                 renderTextLayer={false}
                 renderAnnotationLayer={false}
-                className={cn("block", ghost && "opacity-20")}
+                className="block"
               />
               {dims && drawMode && (
                 <DrawingLayer

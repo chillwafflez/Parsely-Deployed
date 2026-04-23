@@ -32,6 +32,9 @@ const ZOOM_MAX = 1.8;
 /** Undo window lifetime for the post-fill VoiceBar. */
 const UNDO_WINDOW_MS = 8000;
 
+/** How long the one-shot flash animation stays on voice-filled slots. */
+const FLASH_WINDOW_MS = 600;
+
 interface TemplateFillStageProps {
   template: Template;
 }
@@ -48,13 +51,15 @@ type VoiceState =
       warnings: VoiceWarning[];
       unmatched: string[];
     }
-  | { kind: "error"; message: string };
+  | { kind: "error"; message: string; hint?: string };
 
 /**
  * Full-width fill stage reachable from the sidebar template library.
- * Renders the template's source PDF ghosted with field slots overlaid;
- * the user types (Phase 2) or dictates (Phase 3) values and exports the
- * filled document to PDF via the pluggable exporter pipeline.
+ * Renders the template's source PDF at full opacity with field slots
+ * overlaid; the user types (Phase 2) or dictates (Phase 3) values and
+ * exports the filled document to PDF via the pluggable exporter pipeline.
+ * On export, each slot's mask color is sampled from the surrounding page
+ * so the filled regions blend with the original document.
  */
 export function TemplateFillStage({ template }: TemplateFillStageProps) {
   const { showToast } = useAppShell();
@@ -64,11 +69,13 @@ export function TemplateFillStage({ template }: TemplateFillStageProps) {
   const [activeSlotId, setActiveSlotId] = React.useState<string | null>(null);
   const [exporting, setExporting] = React.useState(false);
   const [voiceState, setVoiceState] = React.useState<VoiceState>({ kind: "idle" });
+  const [flashingFields, setFlashingFields] = React.useState<Record<string, boolean>>({});
 
   // Cancel handle for an active recognition session — lives in a ref so
   // flipping it doesn't retrigger the render that consumes voiceState.
   const stopRecognitionRef = React.useRef<(() => void) | null>(null);
   const undoTimerRef = React.useRef<number | null>(null);
+  const flashTimerRef = React.useRef<number | null>(null);
 
   const sourcePdfUrl = template.sourceDocumentId
     ? apiFileUrl(template.sourceDocumentId)
@@ -89,10 +96,26 @@ export function TemplateFillStage({ template }: TemplateFillStageProps) {
     }, UNDO_WINDOW_MS);
   }, [clearUndoTimer]);
 
+  const triggerFlash = React.useCallback((fields: string[]) => {
+    if (fields.length === 0) return;
+    if (flashTimerRef.current !== null) {
+      window.clearTimeout(flashTimerRef.current);
+    }
+    setFlashingFields(Object.fromEntries(fields.map((f) => [f, true])));
+    flashTimerRef.current = window.setTimeout(() => {
+      setFlashingFields({});
+      flashTimerRef.current = null;
+    }, FLASH_WINDOW_MS);
+  }, []);
+
   // Clean up any in-flight recognition + timers if the stage unmounts.
   React.useEffect(() => {
     return () => {
       clearUndoTimer();
+      if (flashTimerRef.current !== null) {
+        window.clearTimeout(flashTimerRef.current);
+        flashTimerRef.current = null;
+      }
       stopRecognitionRef.current?.();
       stopRecognitionRef.current = null;
     };
@@ -195,6 +218,7 @@ export function TemplateFillStage({ template }: TemplateFillStageProps) {
               warnings,
               unmatched: response.unmatchedPhrases,
             });
+            triggerFlash(changedFields);
             scheduleUndoExpiry();
           } catch (err) {
             const message =
@@ -203,15 +227,7 @@ export function TemplateFillStage({ template }: TemplateFillStageProps) {
           }
         },
         onError: (err) => {
-          const message =
-            err.kind === "permission-denied"
-              ? "Microphone access denied. Enable it in your browser settings."
-              : err.kind === "no-speech"
-                ? "Couldn't hear that — try again."
-                : err.kind === "network"
-                  ? "Network error — check your connection."
-                  : err.message || "Voice recognition failed.";
-          setVoiceState({ kind: "error", message });
+          setVoiceState({ kind: "error", ...voiceErrorCopy(err.kind, err.message) });
         },
       });
       stopRecognitionRef.current = stop;
@@ -219,7 +235,7 @@ export function TemplateFillStage({ template }: TemplateFillStageProps) {
       const message = err instanceof Error ? err.message : "Voice session failed";
       setVoiceState({ kind: "error", message });
     }
-  }, [clearUndoTimer, filled, scheduleUndoExpiry, template.id]);
+  }, [clearUndoTimer, filled, scheduleUndoExpiry, template.id, triggerFlash]);
 
   const handleStopListening = React.useCallback(() => {
     stopRecognitionRef.current?.();
@@ -275,7 +291,9 @@ export function TemplateFillStage({ template }: TemplateFillStageProps) {
           warnings: voiceState.warnings,
           unmatched: voiceState.unmatched,
         }
-      : voiceState;
+      : voiceState.kind === "error"
+        ? { kind: "error", message: voiceState.message, hint: voiceState.hint }
+        : voiceState;
 
   return (
     <section
@@ -371,7 +389,6 @@ export function TemplateFillStage({ template }: TemplateFillStageProps) {
           onPagesLoaded={setNumPages}
           drawMode={false}
           onDrawComplete={() => {}}
-          ghost={true}
           renderPageOverlay={({
             pageNumber,
             pageWidthPoints,
@@ -383,6 +400,7 @@ export function TemplateFillStage({ template }: TemplateFillStageProps) {
               pageHeightPoints={pageHeightPoints}
               rules={template.rules}
               filled={filled}
+              flashing={flashingFields}
               activeSlotId={activeSlotId}
               onSelectSlot={setActiveSlotId}
               onCommit={handleCommit}
@@ -410,4 +428,33 @@ function sanitizeFilename(name: string): string {
   return (
     name.replace(/[^a-z0-9-_]+/gi, "-").replace(/^-|-$/g, "") || "template"
   );
+}
+
+/**
+ * Maps a recognition error kind to a user-readable message plus an optional
+ * actionable hint. Permission-denied gets the loudest hint since that's the
+ * only error the user has to act on outside our UI.
+ */
+function voiceErrorCopy(
+  kind: string,
+  fallback: string
+): { message: string; hint?: string } {
+  switch (kind) {
+    case "permission-denied":
+      return {
+        message: "Microphone access denied.",
+        hint: "Click the lock (or tune) icon in your address bar to allow microphone access, then retry.",
+      };
+    case "no-speech":
+      return { message: "Couldn't hear that — try again." };
+    case "network":
+      return {
+        message: "Network error.",
+        hint: "Check your connection and retry.",
+      };
+    case "canceled":
+      return { message: fallback || "Recognition canceled." };
+    default:
+      return { message: fallback || "Voice recognition failed." };
+  }
 }

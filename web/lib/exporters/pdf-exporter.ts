@@ -1,5 +1,6 @@
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import { polygonInchesToPdfPoints } from "@/lib/bbox";
+import { createBackgroundSampler } from "./sample-background";
 import type { Exporter, FilledField, SourceMeta } from "./types";
 
 /** Inner padding from the slot edges when drawing text (points). */
@@ -27,43 +28,59 @@ async function exportPdf(
   const pdfDoc = await PDFDocument.load(sourceBytes);
   const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
 
-  for (const field of fields) {
-    const pageIndex = field.pageNumber - 1;
-    if (pageIndex < 0 || pageIndex >= pdfDoc.getPageCount()) continue;
+  // pdf.js rasterizes each affected page once; the sampler reads pixel
+  // strips around each bbox so masks blend with the surrounding page
+  // instead of hard white. Disposed in `finally` to release the worker
+  // even if pdf-lib throws mid-export.
+  const sampler = await createBackgroundSampler(source.fileUrl);
+  try {
+    for (const field of fields) {
+      const pageIndex = field.pageNumber - 1;
+      if (pageIndex < 0 || pageIndex >= pdfDoc.getPageCount()) continue;
 
-    const page = pdfDoc.getPage(pageIndex);
-    const { height: pageHeightPoints } = page.getSize();
-    const rect = polygonInchesToPdfPoints(field.polygon, pageHeightPoints);
-    if (!rect) continue;
+      const page = pdfDoc.getPage(pageIndex);
+      // Use the CropBox (what Azure DI actually sees — the visible, clipped
+      // page) as the reference frame. MediaBox/CropBox with a non-zero
+      // lower-left origin would otherwise shift every mask by (cropBox.y)
+      // points downward.
+      const cropBox = page.getCropBox();
+      const rect = polygonInchesToPdfPoints(field.polygon, {
+        leftPoints: cropBox.x,
+        topPoints: cropBox.y + cropBox.height,
+      });
+      if (!rect) continue;
 
-    // Paint an opaque white rectangle over the original extracted text so
-    // the bbox region is visually blank before we write the user's value
-    // on top. Relies on the source being a light-background document —
-    // fine for invoices/forms, would need a sampled-background fill for
-    // darker templates (Phase 2+).
-    page.drawRectangle({
-      x: rect.x,
-      y: rect.y,
-      width: rect.width,
-      height: rect.height,
-      color: rgb(1, 1, 1),
-    });
+      const bg = await sampler.sample(field.pageNumber, field.polygon);
+      page.drawRectangle({
+        x: rect.x,
+        y: rect.y,
+        width: rect.width,
+        height: rect.height,
+        color: rgb(bg.r / 255, bg.g / 255, bg.b / 255),
+      });
 
-    const value = field.value.trim();
-    if (value.length === 0) continue;
+      const value = field.value.trim();
+      if (value.length === 0) continue;
 
-    const { text, fontSize } = fitText(value, rect.width - TEXT_PADDING * 2, font);
+      const { text, fontSize } = fitText(
+        value,
+        rect.width - TEXT_PADDING * 2,
+        font
+      );
 
-    page.drawText(text, {
-      x: rect.x + TEXT_PADDING,
-      // Vertically center-ish the baseline inside the slot. pdf-lib's text
-      // anchor is the baseline, so we nudge up by fontSize * 0.25 to sit
-      // visually centered rather than flush-bottom.
-      y: rect.y + (rect.height - fontSize) / 2 + fontSize * 0.2,
-      size: fontSize,
-      font,
-      color: rgb(0, 0, 0),
-    });
+      page.drawText(text, {
+        x: rect.x + TEXT_PADDING,
+        // Vertically center-ish the baseline inside the slot. pdf-lib's text
+        // anchor is the baseline, so we nudge up by fontSize * 0.2 to sit
+        // visually centered rather than flush-bottom.
+        y: rect.y + (rect.height - fontSize) / 2 + fontSize * 0.2,
+        size: fontSize,
+        font,
+        color: rgb(0, 0, 0),
+      });
+    }
+  } finally {
+    await sampler.dispose();
   }
 
   const outputBytes = await pdfDoc.save();

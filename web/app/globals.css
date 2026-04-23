@@ -47,6 +47,7 @@
   --animate-scrim-fade: scrim-fade 0.15s ease;
   --animate-modal-pop: modal-pop 0.16s ease;
   --animate-blink: blink 1s infinite;
+  --animate-slot-flash: slot-flash 0.6s ease-out;
 
   @keyframes skeleton-pulse {
     0%,
@@ -81,6 +82,26 @@
   @keyframes blink {
     50% {
       opacity: 0.3;
+    }
+  }
+
+  /* One-shot celebratory pulse for slots just filled by voice. Starts at a
+     brighter-than-committed accent tint + tight colored ring; settles into
+     the normal committed accent-weak bg with an expanded transparent ring.
+     Rendering at 100% matches the slot's static filled style so the class
+     can be removed without a visual jump. */
+  @keyframes slot-flash {
+    0% {
+      box-shadow: 0 0 0 0 var(--color-accent);
+      background-color: color-mix(
+        in oklch,
+        var(--color-accent) 20%,
+        var(--color-accent-weak)
+      );
+    }
+    100% {
+      box-shadow: 0 0 0 6px transparent;
+      background-color: var(--color-accent-weak);
     }
   }
 }

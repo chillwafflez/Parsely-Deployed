@@ -34,7 +34,12 @@ export type VoiceBarState =
       warnings: VoiceWarning[];
       unmatched: string[];
     }
-  | { kind: "error"; message: string };
+  | {
+      kind: "error";
+      message: string;
+      /** Optional actionable follow-up rendered below the main error line. */
+      hint?: string;
+    };
 
 interface VoiceBarProps {
   state: VoiceBarState;
@@ -96,6 +101,10 @@ export function VoiceBar({
           />
         )}
       </div>
+
+      {state.kind === "error" && state.hint && (
+        <p className="text-[11.5px] text-ink-3 pl-[26px] pr-1">{state.hint}</p>
+      )}
 
       {state.kind === "filled" &&
         (state.warnings.length > 0 || state.unmatched.length > 0) && (

@@ -103,22 +103,38 @@ export interface BBoxPdfPoints {
 }
 
 /**
- * Converts an Azure DI polygon (inches, top-left origin) into a rectangle
- * in pdf-lib coordinates (points, bottom-left origin).
+ * Origin of the visible page in pdf-lib content-space. Pass values from
+ * `page.getCropBox()`:
+ *   leftPoints = cropBox.x
+ *   topPoints  = cropBox.y + cropBox.height
+ * These account for PDFs whose MediaBox/CropBox aren't anchored at (0, 0).
+ */
+export interface PdfPageOrigin {
+  leftPoints: number;
+  topPoints: number;
+}
+
+/**
+ * Converts an Azure DI polygon (inches, measured from the TOP-LEFT of the
+ * visible/cropped page) into a rectangle in pdf-lib content-space (points,
+ * bottom-left origin).
  *
  * Two conversions in one step — getting either wrong is the single most
  * common bug when overlaying on a PDF:
  *   1. inches → points: multiply by 72
- *   2. top-left Y → bottom-left Y: pageHeight - (yTopInches * 72)
+ *   2. top-left Y → bottom-left Y using the CropBox's top as reference,
+ *      NOT page height. When MediaBox/CropBox has a non-zero y origin
+ *      (common in A4/non-zero-origin PDFs), using `pageHeight - y*72`
+ *      draws the rectangle shifted downward by `cropBox.y` points.
  *
  * Azure returns a 4-corner polygon that may be slightly non-rectangular;
  * we take the axis-aligned bounding box to keep rendering simple.
  */
 export function polygonInchesToPdfPoints(
   polygon: number[],
-  pagePointsHeight: number
+  origin: PdfPageOrigin
 ): BBoxPdfPoints | null {
-  if (polygon.length < 8 || pagePointsHeight <= 0) return null;
+  if (polygon.length < 8) return null;
 
   let minX = Infinity;
   let maxX = -Infinity;
@@ -135,10 +151,8 @@ export function polygonInchesToPdfPoints(
   }
 
   return {
-    x: minX * 72,
-    // maxY is the visual-bottom in Azure's top-left-origin inches; flip to
-    // pdf-lib's bottom-left origin by subtracting from page height.
-    y: pagePointsHeight - maxY * 72,
+    x: origin.leftPoints + minX * 72,
+    y: origin.topPoints - maxY * 72,
     width: (maxX - minX) * 72,
     height: (maxY - minY) * 72,
   };

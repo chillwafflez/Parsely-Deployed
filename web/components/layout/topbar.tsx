@@ -28,7 +28,7 @@ export function Topbar({ documentName, templateName }: TopbarProps) {
         >
           P
         </div>
-        <span>Parser</span>
+        <span>Parsely</span>
       </div>
       <nav
         className="flex items-center gap-[7px] text-ink-3 text-[13.5px]"

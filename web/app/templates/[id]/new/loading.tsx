@@ -1,5 +1,5 @@
-import { TemplateFillLoading } from "@/components/document/template-fill-loader";
+import { TemplateFillLoadingSkeleton } from "@/components/document/template-fill-placeholder";
 
 export default function Loading() {
-  return <TemplateFillLoading />;
+  return <TemplateFillLoadingSkeleton />;
 }

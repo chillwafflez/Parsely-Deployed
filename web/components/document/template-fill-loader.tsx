@@ -1,11 +1,14 @@
 "use client";
 
 import * as React from "react";
-import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getTemplate } from "@/lib/api-client";
 import type { Template } from "@/lib/types";
 import { TemplateFillStage } from "./template-fill-stage";
+import {
+  TemplateFillErrorPanel,
+  TemplateFillLoadingSkeleton,
+} from "./template-fill-placeholder";
 
 type LoaderState =
   | { kind: "loading" }
@@ -56,34 +59,7 @@ export function TemplateFillLoader({ templateId }: TemplateFillLoaderProps) {
 
   if (state.kind === "not-found") notFound();
   if (state.kind === "error") return <TemplateFillErrorPanel message={state.message} />;
-  if (state.kind === "loading") return <TemplateFillLoading />;
+  if (state.kind === "loading") return <TemplateFillLoadingSkeleton />;
 
   return <TemplateFillStage key={state.template.id} template={state.template} />;
-}
-
-export function TemplateFillLoading() {
-  return (
-    <div
-      role="status"
-      aria-live="polite"
-      className="flex flex-1 items-center justify-center text-ink-3 text-[13px]"
-    >
-      Loading template…
-    </div>
-  );
-}
-
-function TemplateFillErrorPanel({ message }: { message: string }) {
-  return (
-    <div className="flex flex-1 flex-col items-center justify-center gap-2 text-center px-6">
-      <p className="text-[14px] text-err font-medium">Couldn&apos;t load template</p>
-      <p className="text-[12px] text-ink-3 max-w-[420px]">{message}</p>
-      <Link
-        href="/documents"
-        className="text-[12px] text-accent-ink underline-offset-2 hover:underline"
-      >
-        Back to documents
-      </Link>
-    </div>
-  );
 }
