@@ -270,6 +270,18 @@
   color: var(--color-ink-3);
 }
 
+.exportRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.exportLabel {
+  flex: 1;
+  font-size: 11.5px;
+  color: var(--color-ink-3);
+}
+
 .footerActions {
   display: flex;
   gap: 8px;

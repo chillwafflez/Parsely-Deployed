@@ -216,6 +216,7 @@ export function ReviewStage({ document, onDocumentChange }: ReviewStageProps) {
       />
       <Inspector
         fields={document.fields}
+        fileName={document.fileName}
         selectedFieldId={selectedFieldId}
         onSelectField={setSelectedFieldId}
         onUpdateField={handleUpdateField}

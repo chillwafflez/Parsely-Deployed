@@ -1,11 +1,12 @@
 "use client";
 
 import * as React from "react";
-import { FileSearch, History, Info, PenLine, Save, Search, Sparkles } from "lucide-react";
+import { Download, FileSearch, History, Info, PenLine, Save, Search, Sparkles } from "lucide-react";
 import { Button } from "../ui/button";
 import { InspectorField } from "./inspector-field";
 import { cn } from "@/lib/cn";
 import { groupFields } from "@/lib/field-groups";
+import { exportFieldsAsCsv, exportFieldsAsJson } from "@/lib/exporters/field-exporter";
 import type { ExtractedField, FieldUpdate } from "@/lib/types";
 import styles from "./inspector.module.css";
 
@@ -13,6 +14,7 @@ type Filter = "all" | "issues" | "required";
 
 interface InspectorProps {
   fields: ExtractedField[];
+  fileName: string;
   selectedFieldId: string | null;
   onSelectField: (id: string | null) => void;
   onUpdateField: (id: string, update: FieldUpdate) => void;
@@ -23,6 +25,7 @@ interface InspectorProps {
 
 export function Inspector({
   fields,
+  fileName,
   selectedFieldId,
   onSelectField,
   onUpdateField,
@@ -56,6 +59,14 @@ export function Inspector({
 
   const grouped = React.useMemo(() => groupFields(visible), [visible]);
   const hasAnyVisible = visible.length > 0;
+
+  const handleExportCsv = React.useCallback(() => {
+    exportFieldsAsCsv(fields, fileName);
+  }, [fields, fileName]);
+
+  const handleExportJson = React.useCallback(() => {
+    exportFieldsAsJson(fields, fileName);
+  }, [fields, fileName]);
 
   return (
     <aside className={styles.pane} aria-label="Extracted fields">
@@ -142,6 +153,25 @@ export function Inspector({
               : `All ${fields.length} fields look good.`}
           </span>
         </div>
+        <div className={styles.exportRow}>
+          <span className={styles.exportLabel}>Export fields</span>
+          <Button
+            onClick={handleExportCsv}
+            disabled={fields.length === 0}
+            title="Download extracted fields as CSV"
+          >
+            <Download size={12} />
+            CSV
+          </Button>
+          <Button
+            onClick={handleExportJson}
+            disabled={fields.length === 0}
+            title="Download extracted fields as JSON"
+          >
+            <Download size={12} />
+            JSON
+          </Button>
+        </div>
         <div className={styles.footerActions}>
           <Button disabled title="Revert lands in Day 7">
             <History size={13} />
@@ -150,7 +180,6 @@ export function Inspector({
           <Button
             variant="primary"
             onClick={onSaveTemplate}
-            title="Save as template (coming in Day 6)"
           >
             <Save size={13} />
             Save as template
