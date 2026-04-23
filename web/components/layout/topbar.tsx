@@ -35,8 +35,6 @@ export function Topbar({ documentName, templateName }: TopbarProps) {
         aria-label="Breadcrumbs"
       >
         <span className="text-ink-4">/</span>
-        <span>Workspace</span>
-        <span className="text-ink-4">/</span>
         <span>Documents</span>
         {documentName && (
           <>
@@ -63,15 +61,6 @@ export function Topbar({ documentName, templateName }: TopbarProps) {
         </span>
       )}
       <div className="flex-1" />
-      <span
-        className={[
-          "font-mono text-[12px] text-ink-3",
-          "py-1 px-2.5 rounded-full",
-          "border border-line bg-surface-2",
-        ].join(" ")}
-      >
-        local · dev
-      </span>
       <Button variant="ghost" aria-label="Settings">
         <Settings size={16} />
       </Button>

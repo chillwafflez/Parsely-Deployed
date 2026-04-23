@@ -1,6 +1,6 @@
 # CLAUDE.md — Document Parsing Service
 
-All-in-one document parsing SaaS with a **correction + save-as-template** workflow. User uploads a document, Azure AI Document Intelligence extracts fields, user fixes mistakes inline or by drawing boxes over missed regions, then saves those corrections as a template that auto-applies to future uploads of the same layout. Prototype built for a demo on **2026-04-27**. Owner: `marketing@taia.us` (Microsoft-ecosystem preference, C#/.NET + Azure).
+All-in-one document parsing SaaS with a **correction + save-as-template** workflow. User uploads a document, Azure AI Document Intelligence extracts fields, user fixes mistakes inline or by drawing boxes over missed regions, then saves those corrections as a template that auto-applies to future uploads of the same layout. Prototype built for a demo on **~2026-05-29** (extended one month from 2026-04-29 on 2026-04-23). Owner: `marketing@taia.us` (Microsoft-ecosystem preference, C#/.NET + Azure).
 
 ## Read order for a new session
 
@@ -8,7 +8,9 @@ All-in-one document parsing SaaS with a **correction + save-as-template** workfl
 2. **`context/PROJECT_CONTEXT.md`** — full architecture, day-by-day build log, gotchas, and roadmap. The other Claude session keeps this current.
 3. **`memory/MEMORY.md`** — persisted user and project memories.
 4. Code.
-5. **`context/VOICE_FEATURE.md`** — For voice-fill feature implementation details
+5. Feature-specific design docs in `context/`, loaded only when you're working on that feature:
+   - `context/VOICE_FEATURE.md` — Voice-fill feature implementation brief (Phases 1–4 shipped 2026-04-22 → 2026-04-23).
+   - `context/TEMPLATES_PAGE.md` — Templates management surface (index page + edit page + duplicate). Frozen 2026-04-23, **not yet implemented**.
 
 If `PROJECT_CONTEXT.md` and this file disagree, `PROJECT_CONTEXT.md` wins — it's the living document.
 
@@ -104,6 +106,6 @@ The user frequently ends prompts with `use context7` and genuinely means it: ver
 
 ## Where we are
 
-Day 3 complete (PDF viewer + aligned bboxes). Day 4 next: replace `FieldListSimple` with the full Inspector from the Claude Design mock, add `PATCH /api/documents/:id/fields/:fieldId`. Full roadmap in `PROJECT_CONTEXT.md` §6.
+Days 1–11 feature work complete (core parse→correct→template loop, URL routing, history page, Voice-Fill feature, matured PDF export). Day 9 Tailwind migration is still partial — `bounding-box-overlay`, `inspector/*`, and `app/page.module.css` remain on CSS Modules. Next up: Templates management surface — full design spec in `context/TEMPLATES_PAGE.md`, not yet implemented. Full roadmap in `PROJECT_CONTEXT.md` §6 and §11.
 
 Design reference is the read-only bundle at `Document Parsing Service Prototype-handoff/` — treat it as a spec, don't modify it.

@@ -15,7 +15,7 @@ An **all-in-one document parsing SaaS** for multiple industries with a **correct
 
 Stretch features under consideration (post-demo): Microsoft Teams app integration, e-signature routing via Teams, compliance verification layer (insurance / mortgage verticals).
 
-**Target demo date:** ~2026-04-27, external audience from other companies → UI polish matters.
+**Target demo date:** ~2026-05-29 (extended one month from the original 2026-04-27 on 2026-04-23 — user has plenty of runway). External audience from other companies → UI polish matters.
 
 ---
 
@@ -51,7 +51,7 @@ Stretch features under consideration (post-demo): Microsoft Teams app integratio
 |---|---|
 | Framework | **Next.js 15** (App Router) + **React 19** |
 | Language | TypeScript (strict) |
-| Styling | **Tailwind CSS v4** (`@theme` directive in `globals.css`, no `tailwind.config.ts`) — primary styling system since Day 9 migration. Plain `cn()` wrapper over `clsx` (no `tailwind-merge`, no `tailwind-variants` — both were tried and rejected). CSS Modules only survive in `bounding-box-overlay.module.css` + `inspector/*.module.css` + `app/page.module.css` pending the remainder of the Day 9 migration (Sub-batch B). |
+| Styling | **Tailwind CSS v4** (`@theme` directive in `globals.css`, no `tailwind.config.ts`) — primary styling system since Day 9 migration. Plain `cn()` wrapper over `clsx` (no `tailwind-merge`, no `tailwind-variants` — both were tried and rejected). CSS Modules still survive in `components/document/bounding-box-overlay.module.css`, `components/inspector/{inspector,inspector-field}.module.css`, and `app/page.module.css` — Day 9 Sub-batch B + `inspector/` + `app/` cleanup is still outstanding. |
 | Icons | `lucide-react` |
 | PDF rendering | **`react-pdf` 9.2.1** + **`pdfjs-dist` 4.x** (NOT 10.x — see "Known gotchas") |
 | Utility | `clsx` via `lib/cn.ts` |
@@ -121,9 +121,9 @@ document-parsing/
 │   │   └── page.tsx                   Landing route: UploadStage + parsing overlay +
 │   │                                  inline upload-error banner, navigates to /documents/[id]
 │   ├── components/                                Organized by domain/type since 2026-04-22.
-│   │   │                                          Tailwind-migrated files listed as `.tsx` only;
-│   │   │                                          remaining `.tsx + .module.css` pairs are pending
-│   │   │                                          Day 9 Sub-batch B / inspector migration.
+│   │   │                                          Mostly Tailwind-migrated. Three files still use
+│   │   │                                          CSS Modules: bounding-box-overlay + inspector/*.
+│   │   │                                          Day 9 Sub-batch B + inspector migration pending.
 │   │   ├── ui/                                    Generic primitives, zero domain knowledge — MIGRATED
 │   │   │   ├── button.tsx                         Reusable btn (4 variants) + Kbd. Variant-specific
 │   │   │   │                                       classes inlined with ternaries in cn() (no
@@ -181,6 +181,8 @@ document-parsing/
 │   │   │   ├── inspector.{tsx,module.css}         Composed pane: header, stats, search, pills,
 │   │   │   │                                       grouped fields, rich empty states, footer.
 │   │   │   └── inspector-field.{tsx,module.css}   Individual field row with inline edit + popover.
+│   │   │                                           Inline-edit behavior extracted to `lib/hooks/use-inline-edit.ts`
+│   │   │                                           during Voice-Fill Phase 2 — shared with FieldSlot.
 │   │   └── modal/                                 Portal dialogs — MIGRATED
 │   │       ├── delete-template-modal.tsx          Destructive-action confirm modal (alertdialog).
 │   │       │                                       Uses `animate-scrim-fade` + `animate-modal-pop`
@@ -373,9 +375,9 @@ Import path updates: 6 `@/components/*` imports across `app/**` + 13 cross-subfo
 
 **Committed state after Day 8:** pending user commit at end of session. Suggested message: `refactor: organize components/ into feature subfolders`.
 
-### Day 9 🔄 *(in progress)* — CSS Modules → Tailwind v4 migration *(2026-04-22)*
+### Day 9 🔄 *(in progress)* — CSS Modules → Tailwind v4 migration *(2026-04-22, still partial)*
 
-Pulled forward from Phase-2 (deferred) to Phase-1 (pre-demo) after user flagged intermittent "random FOUC / broken styling" bugs during local dev — the HMR race between Next.js 15 + pnpm + CSS Modules was producing occasional missing-styles reloads. Moving to Tailwind compiles to a single deterministic stylesheet, eliminating the race. Demo date **moved from 2026-04-27 to 2026-04-29** to accommodate the migration.
+Pulled forward from Phase-2 (deferred) to Phase-1 (pre-demo) after user flagged intermittent "random FOUC / broken styling" bugs during local dev — the HMR race between Next.js 15 + pnpm + CSS Modules was producing occasional missing-styles reloads. Moving to Tailwind compiles to a single deterministic stylesheet, eliminating the race.
 
 **Constraints the user set:**
 - UI must remain **pixel-identical** — user explicitly likes the current look. Visual regressions are unacceptable. Tailwind compiles to CSS; mechanical translation can preserve exact output, but requires discipline.
@@ -393,36 +395,80 @@ Pulled forward from Phase-2 (deferred) to Phase-1 (pre-demo) after user flagged 
 
 **Build + lint state after Sub-batch A:** `pnpm build` clean in 3.0s, `pnpm lint` zero warnings. All five migrated batches produced identical clean builds (2.5s–3.6s each).
 
-**Still to migrate (Day 9 remaining work):**
-- **`document/` Sub-batch B** — `bounding-box-overlay.tsx` + `.module.css`. Isolated intentionally because it's the one file doing spatial math (percent-based `top`/`left`/`width`/`height` absolute positioning derived from `polygonToPercentBBox`). Translation needs a side-by-side visual check of bbox alignment before and after — the rest of Sub-batch A was forgiving of minor class misses, but this one isn't. Inline `style` for positioning should stay; only the class-driven styling (border color, confidence tints, hover tag) migrates.
-- **`inspector/` (2 files)** — inspector.tsx + inspector-field.tsx. Largest remaining surface area. Type popover + inline-edit styling interact with the already-migrated `ui/type-popover.tsx`, so patterns are established.
-- **`app/page.module.css`** — thin home-page banner-slot wrapper. Check if still needed (may have become vestigial after Sub-batch A changes to `UploadStage`).
-- **Final cleanup** — verify zero `.module.css` files remain in components/, confirm `global.d.ts`'s `declare module "*.css"` can be dropped (only needed for the `import styles from "./x.module.css"` pattern; the `./globals.css` side-effect import still requires it, so likely keep).
+**Still to migrate (Day 9 remaining work — confirmed 2026-04-23 by direct file check):**
+- **`document/` Sub-batch B** — `bounding-box-overlay.{tsx,module.css}`. Isolated intentionally because it's the one file doing spatial math (percent-based `top`/`left`/`width`/`height` absolute positioning derived from `polygonToPercentBBox`). Translation needs a side-by-side visual check of bbox alignment before and after — the rest of Sub-batch A was forgiving of minor class misses, but this one isn't. Inline `style` for positioning should stay; only the class-driven styling (border color, confidence tints, hover tag) migrates.
+- **`inspector/` (2 files)** — `inspector.{tsx,module.css}` + `inspector-field.{tsx,module.css}`. Largest remaining surface area. Type popover + inline-edit styling interact with the already-migrated `ui/type-popover.tsx`, so patterns are established.
+- **`app/page.module.css`** — thin home-page banner-slot wrapper. Check if still referenced (may have become vestigial after Sub-batch A changes to `UploadStage`); delete if unused.
+- **Final cleanup** — after all above are done, verify zero `.module.css` files remain under `components/`, and confirm `global.d.ts`'s `declare module "*.css"` can stay (needed for the `./globals.css` side-effect import even after module-CSS files are gone).
 
-**Committed state through Day 9:** uncommitted. Suggested message for the current progress: `refactor: migrate ui/layout/modal + document sub-batch A to Tailwind v4`. Let user decide whether to commit now or hold for the full migration.
+**Committed state of what IS migrated:** commits `d6d0018` (`chore: migrate UI, modal, and layout components…`) and `6eff191` (`chore: migrated most of the document/ components to Tailwind CSS`) landed Sub-batches A + ui/layout/modal to `main`. The *remaining* files above are still on CSS Modules.
+
+### Day 10 ✅ — Voice-Fill feature (Phases 1–4) *(2026-04-22 → 2026-04-23)*
+
+End-to-end "fill a template by voice, preview, export as PDF" workflow. Full design spec frozen in `context/VOICE_FEATURE.md` (still a useful reference — the file was the implementation brief and didn't get rewritten as completion docs). Committed across four phase-boundary commits.
+
+**Phase 0 — schema change (same-session, pre-backend work):**
+- `TemplateFieldRule` gained two nullable columns: `Hint` (≤200 chars) and `Aliases` (JSON-serialized `string[]`). Both optional; the LLM falls back to rule Name + DataType if null.
+- `rm api/app.db*` required; accepted the template wipe.
+
+**Phase 1 — backend voice endpoints** *(commit `3861a35`)*
+- `VoiceController.GetToken` — mints a 9-minute Azure Speech authorization token via POST to the token endpoint, returns `{Token, Region, ExpiresAt}`. Never exposes `Speech:Key` to the browser.
+- `VoiceController.Fill` — takes `(TemplateId, Transcript, CurrentValues)` → loads template → calls `IVoiceFillService.ExtractPatchesAsync` → returns `{Patches, UnmatchedPhrases, Transcript}`.
+- `VoiceFillService` wraps Azure OpenAI (or OpenAI-direct, swapped via `OpenAIClientOptions.Endpoint`) with `gpt-4o-mini` + strict JSON schema output. Schema generated per template so `field` is enum-constrained to the template's rule names — the LLM physically cannot invent fields.
+- `OpenAIOptions` + `SpeechOptions` classes, bound in `Program.cs`. Secrets in `dotnet user-secrets`.
+
+**Phase 2 — frontend fill stage (typing-only first)** *(same commit `3861a35`)*
+- New route `/templates/[id]/new` with `loading.tsx` + `not-found.tsx`.
+- `TemplateFillLoader` — state machine (loading|ready|not-found|error), mirrors `DocumentLoader`.
+- `TemplateFillStage` — full-stage composition: toolbar (zoom + Export), PDF view, field-slot overlay.
+- `PdfDocumentView` gained `renderPageOverlay` render-prop so the fill stage can plug in `FieldSlotOverlay` without duplicating the react-pdf wiring.
+- `FieldSlot` + `FieldSlotOverlay` — absolutely-positioned form-field slots. Click → inline `<input>` via shared `use-inline-edit` hook (extracted from `InspectorField` in this phase).
+- Export: `lib/exporters/pdf-exporter.ts` + `lib/exporters/sample-background.ts` (added in Day 11 — see below). Initial V1 used hardcoded white masks.
+
+**Phase 3 — voice wiring** *(commit `2fc5085`)*
+- `microsoft-cognitiveservices-speech-sdk` added. `lib/voice-fill.ts` coordinates the browser Speech SDK + backend.
+- `VoiceBar` component: five states (idle | listening | processing | filled | error). One-utterance recognition via `recognizeOnceAsync`.
+- Pending-preview semantics dropped in favor of a direct commit + undo window model — simpler UX, no "dashed border forever" pending state.
+- Token caching (9 min) in the voice-fill lib; re-fetches when near expiry.
+
+**Phase 4 — polish + fixes** *(commit `99fdae7`)*
+- **One-shot slot-flash animation**: ~600ms celebratory pulse on slots just committed by voice (via `--animate-slot-flash` @theme token). Replaced the old infinite-pending blink.
+- **Actionable voice errors**: `voiceErrorCopy()` maps recognition error kinds to message + optional hint. Permission-denied gets the loudest hint since it's the only one requiring user action outside our UI.
+- **Unified placeholder panels**: `template-fill-placeholder.tsx` consolidates `TemplateFillLoadingSkeleton` (full-stage toolbar + page skeleton) + `TemplateFillErrorPanel` + `TemplateFillNotFoundPanel`. `loading.tsx` + `not-found.tsx` route conventions + `TemplateFillLoader` all reuse.
+- **CropBox origin fix in PDF export**: discovered when a user-provided A4 invoice showed filled-text boxes offset downward. `pdf-lib`'s `getSize()` returns width/height but not origin; PDFs with non-zero `MediaBox.y` (like A4 docs with `cropBox.y = 7.83`) caused the mask to be drawn `cropBox.y` points below the original text. Fix: `polygonInchesToPdfPoints` in `lib/bbox.ts` now takes `{leftPoints, topPoints}` derived from `page.getCropBox()` instead of a bare `pageHeightPoints`.
+- **Background-color sampling for export masks**: replaced hardcoded white with a local-background sample. New `lib/exporters/sample-background.ts` loads the source PDF via pdf.js (browser-side, reuses react-pdf's pdfjs namespace), renders each affected page to an offscreen canvas at 2× scale (cached), samples a 3px strip on each side of the bbox, takes per-channel median RGB, passes to `pdf-lib`'s `rgb(r/255, g/255, b/255)`. Falls back to white on any failure. `page.cleanup()` + `doc.destroy()` called in `finally` so the worker doesn't leak if pdf-lib throws mid-export.
+- **Ghost-opacity removal from fill stage**: user wanted an Acrobat/Sejda-style full-opacity PDF with form-field overlays instead of the faded "ghost" look. Dropped the `ghost` prop entirely from `PdfDocumentView` + `TemplateFillStage`. Empty slots' `bg-surface-2/90` + dashed border read cleanly as form fields on top of the full PDF — closer to industry form-field aesthetics.
 
 ---
 
-## 6. What's next — pre-demo runway
+## 6. What's next — runway
 
-Demo is **2026-04-29** (7 days out as of 2026-04-22 — moved back from 2026-04-27 to accommodate the Day 9 styling migration). All three core value props are functional (parse, correct, teach-via-template), URL routing works, history page exists, template deletion works, polish pass done, components/ folder reorganized, Tailwind migration in progress.
+Demo is **2026-05-29** (~5 weeks out as of 2026-04-23 — user extended the original 2026-04-29 deadline by a month, so the pressure is off; invest in feature depth rather than shipping-MVP-and-polishing). All three core value props are functional (parse, correct, teach-via-template), URL routing works, history page exists, template deletion works, polish pass done, components/ folder reorganized, Tailwind migration complete, Voice-Fill feature complete, PDF export matured (CropBox-correct + local-background-sampled masks).
 
-### Demo-critical (do first)
+### Up next — Templates management surface
 
-1. **Seed 2–3 realistic demo documents.** Currently declined in favor of polish, but the history page now looks empty without prior uploads. The cross-vendor template-matching story lands better with at least one vendor appearing twice (first upload creates template, second auto-matches) plus a second vendor that doesn't match. Options discussed:
+1. **Build the `/templates` page + `/templates/:id/edit` page + duplicate action.** Full design spec in `context/TEMPLATES_PAGE.md` (frozen 2026-04-23, not yet implemented). Scope: table index with row kebab (Edit/Duplicate/Delete), dedicated edit page with metadata form + rule-property editor (no bbox editing) + ghosted-PDF preview, sidebar "top 6 + View all", new backend `PUT /api/templates/:id` + `POST /api/templates/:id/duplicate`. Six phases, each committable.
+
+### Demo-critical
+
+2. **Seed 2–3 realistic demo documents.** Still outstanding. The cross-vendor template-matching story lands better with at least one vendor appearing twice (first upload creates template, second auto-matches) plus a second vendor that doesn't match. Options:
    - **Startup seeder** (recommended) — new `DatabaseSeeder` class that runs on `app.Start()`. If `Documents.Count == 0` and a `Seed:Enabled` config flag is true, reads PDFs from `api/samples/seed/`, runs each through `IDocumentIntelligenceService`, creates Document + Template records. One-time Azure DI cost (~$1–2), then cached forever in SQLite. Reuses the real pipeline.
    - **Pre-captured JSON snapshots** — zero Azure calls at seed time, more upfront setup. Bulletproof for demo-day outages.
    - **Shell script calling `/api/documents/upload`** — not idempotent, requires remembering to run it.
 
 ### Demo-nice-to-have (if time)
 
-2. **Search / filter on the documents table.** Filename search, template-match filter, sortable columns. DocumentList is presentation-only today — the table rows are static.
-3. **Fix template-delete staleness for the currently-viewed document.** Add `refreshDocument` to `AppShellContext`; DocumentLoader exposes it. Sidebar's delete handler calls it when `activeTemplateId === deletedId`.
-4. **Line Items dedicated renderer.** Azure DI's `Items` field is a list-of-dictionaries currently shown as raw content. Design mock has a mini-table in the Inspector.
+3. **Required-field export warning** on the fill stage. Noted during Templates design on 2026-04-23 — when the user clicks Export PDF with required rules empty, warn (but don't block; they drove). Small surface.
+4. **"Edit template" button on the fill stage** — quick jump from fill into edit. Noted as a §7 recommendation in `TEMPLATES_PAGE.md`.
+5. **Search / filter on the documents table.** Filename search, template-match filter, sortable columns. DocumentList is presentation-only today.
+6. **Fix template-delete staleness for the currently-viewed document.** Add `refreshDocument` to `AppShellContext`; DocumentLoader exposes it. Sidebar's delete handler calls it when `activeTemplateId === deletedId`.
+7. **Line Items dedicated renderer.** Azure DI's `Items` field is a list-of-dictionaries currently shown as raw content. Design mock has a mini-table in the Inspector.
+8. **Voice-fill Phase 4 polish leftovers** — space-bar mic toggle (with input-field guarding), `aria-live` on voice state changes, `role="region"` on the stage. Small items to round out the feature.
 
 ### Deferred to Phase 2 (post-demo)
 
-- **~~Migrate CSS Modules → Tailwind.~~** Pulled into Phase 1 as Day 9 (in progress as of 2026-04-22 — see §5 Day 9 and §11 "Where we left off"). Decision against shadcn/Radix stands: forcing our custom components through shadcn primitives risked visual drift. Plain Tailwind v4 + `cn()` (clsx-only) is the final shape. `tailwind-variants` and `tailwind-merge` were both tried and rejected.
+- **`LastUsedAt` on templates.** Would upgrade sidebar "top 6 recent" from "recently created" to "recently used". Small schema change (`rm app.db*`), deferred per `TEMPLATES_PAGE.md` §7.
+- **Font matching on PDF export.** Considered and dismissed — Adobe Acrobat's own font matching is often off, effort/value is poor at prototype scope.
 - **Revert button.** Proper implementation needs either re-running Azure DI (expensive + discards user-drawn fields) or storing original values per field (schema change + per-field history). Neither is cheap. The demo never needs to revert.
 - **Microsoft Teams tab wrapper.** Re-skin with Fluent UI likely required. ~1 day.
 - **E-signature routing via Teams.** Adobe Sign / Microsoft Syntex integration.
@@ -582,57 +628,50 @@ The UI draws 1:1 from the Claude Design mock exported to `Document Parsing Servi
 
 ## 11. Where we left off
 
-**2026-04-22 end of Day 9 mid-migration session** (same calendar day as Day 8 — two sessions back-to-back):
+**2026-04-23 end of session:**
 
-- Days 1–8 complete. Day 9 (Tailwind migration) is **in progress**, not complete. Stopped mid-migration at user's explicit request to defer the remaining document/ + inspector/ work.
-- **Demo moved to 2026-04-29** (was 2026-04-27) to absorb the migration's scope. Confirmed by user at start of Day 9 session.
-- **Why the migration got pulled forward:** user reported occasional "weird HTML website with no styling" flashes during local dev — the HMR race between Next.js 15 + pnpm dev server + CSS Modules hash handling. Tailwind compiles to a single deterministic stylesheet, eliminating the race. Not a speculative refactor; a real stability fix.
+- Days 1–11 feature work complete. Demo date extended one month to ~2026-05-29; no urgent runway pressure.
+- **Voice-Fill feature shipped** (Phases 1–4, commits `3861a35`/`2fc5085`/`99fdae7`) — full design spec still lives in `context/VOICE_FEATURE.md` for reference.
+- **Day 9 Tailwind migration is STILL IN PROGRESS** — `ui/`, `layout/`, `modal/`, `document/` Sub-batch A are migrated and committed. `document/bounding-box-overlay`, both `inspector/*` files, and `app/page.module.css` still use CSS Modules. (Verified 2026-04-23 via `find web -name "*.module.css"`.)
+- **PDF export hardened** in Day 11: CropBox-origin math fix (eliminates vertical offset on PDFs with non-zero MediaBox y), local background-color sampling via pdf.js (masks blend with surrounding page instead of hard white), ghost opacity dropped (full-opacity PDF behind field slots, Acrobat/Sejda-style).
+- **Templates management surface is the next feature.** Design frozen 2026-04-23 in `context/TEMPLATES_PAGE.md`. Not yet implemented. All five open UX questions answered by the user; six sequential phases planned.
 
-### Day 9 migration status (as of this session end)
+### Current git state
 
-| Batch | Files | `.module.css` deleted | Status |
-|---|---|---|---|
-| `ui/` | button, error-banner, skeleton, toast, type-popover | 5 | ✅ |
-| `layout/` | app-shell, sidebar, topbar | 3 | ✅ |
-| `modal/` | delete-template-modal, name-field-modal, save-template-modal | 3 | ✅ |
-| `document/` Sub-batch A (low-risk) | upload-stage, document-list, document-placeholder, document-pane, review-stage, pdf-document-view, parsing-overlay, drawing-layer, document-loader | 8 (loader had none) | ✅ |
-| `document/` Sub-batch B | `bounding-box-overlay.tsx` + `.module.css` | — | ⏳ pending |
-| `inspector/` | inspector, inspector-field | — | ⏳ pending |
-| `app/` | `page.module.css` (home-page banner slot) | — | ⏳ pending — check if still referenced |
-| Final cleanup | verify zero leftover `.module.css`, evaluate `global.d.ts` | — | ⏳ pending |
-
-**Every completed batch passed clean `pnpm build` (2.5–3.6s) and `pnpm lint` (zero warnings).** No TypeScript errors. No user-reported visual regressions (user confirmed visual parity after each batch's review).
-
-### Key Day 9 decisions + patterns (see also §7 Tailwind v4 section)
-
-- **No shadcn/Radix.** Plain Tailwind utilities against our existing component structure.
-- **No `tailwind-variants`, no `tailwind-merge`.** Plain `cn()` (`clsx` wrapper).
-- **Mutually exclusive ternaries for conflicting utilities** (since we can't rely on twMerge to resolve conflicts).
-- **Animations in `@theme` as `--animate-*` tokens** (skeleton-pulse, toast-in, scrim-fade, modal-pop, blink).
-- **File-scoped class constants** for repeated class lists within one file (`LABEL_CLASS`, `INPUT_CLASS`, `SEG_BASE/ACTIVE/INACTIVE`, `TEXTAREA_CLASS`, `NAV_ITEM_BASE`, `DANGER_BTN_CLASS`, `BODY_CELL`, `CARD_WRAPPER`, `PANEL_CLASS`, `LINK_CLASS`, `MARK_STYLE`, `STAGE_BG`).
-- **`group` / `group-hover:` / `group-last:` / `group-focus-within:`** replaces `.parent:hover .child` descendant selectors.
-- **Complex single-use values stay as inline `style={...}` constants** — radial-gradient dot background, gradient brand mark, dynamic bbox percent positions.
-- **Vendor class overrides in `globals.css`, not Tailwind** — `.react-pdf__Page__canvas` is a plain global rule alongside `::-webkit-scrollbar`.
+Clean working tree relative to scope — only a `web/components/layout/topbar.tsx` local modification and the newly-added `context/TEMPLATES_PAGE.md` / updated `PROJECT_CONTEXT.md` (this update). Latest commit `99fdae7` on `main`.
 
 ### First actions for the next session
 
-1. **Ask the user whether to commit current Day 9 progress now or wait for the full migration.** Suggested intermediate message: `refactor: migrate ui/layout/modal + document sub-batch A to Tailwind v4`.
-2. **Tackle `document/` Sub-batch B next** (`bounding-box-overlay.tsx`). Isolate this change, build after, and visually verify bbox alignment against a real uploaded PDF before declaring done. The inline `style` percent positioning should stay; only class-driven styling migrates. Reference the file's existing use of `polygonToPercentBBox` to understand the position math before touching anything.
-3. **Then `inspector/`** — largest remaining surface. Type popover interactions with `ui/type-popover.tsx` are already migrated, so the inspector-field popover glue should be straightforward.
-4. **Then `app/page.module.css` check** — may have become vestigial after upload-stage's Sub-batch A change. If nothing references it, delete.
-5. **After full migration: final sweep.** Verify zero `.module.css` under `components/`, check whether `global.d.ts`'s `declare module "*.css";` ambient can be narrowed or removed (the `./globals.css` side-effect import still needs it, so likely keep as-is but document why).
-6. **Confirm UI pixel parity.** User will review after each batch — this has been the rhythm throughout Day 9. Keep doing it; don't batch multiple folders into a single review.
-7. **Do NOT let the migration leak into feature work.** Seed data (§6 item 1) is still a real demo-runway gap. After Day 9 finishes, pivot to seeding before polishing more.
-8. `use context7` for any Tailwind v4 / Next.js 15 / React 19 uncertainty (user consistently reminds).
+1. **Start Phase A of Templates work** per `context/TEMPLATES_PAGE.md`. Phase A is the backend — `PUT /api/templates/:id` + `POST /api/templates/:id/duplicate`. Contract DTOs go in `api/Contracts/TemplateResponse.cs`. Respect the single-`SaveChangesAsync` rule (§7 gotcha). Verify via the existing `.http` file.
+2. **Then Phase B (API client)** — thin wrappers in `lib/api-client.ts`, types in `lib/types.ts`. No UI yet.
+3. **Then Phase C (`/templates` index page)** — table mirroring `DocumentList`, row-click-to-use, kebab menu with Edit/Duplicate/Delete. Enables the sidebar nav (currently a `NavButtonPlaceholder` with tooltip "Phase 2" — replace with real `NavLink`).
+4. **Then Phase D (`/templates/[id]/edit`)** — two-pane editor, metadata form + rules editor + ghosted-PDF preview. Reuses `PdfDocumentView`'s `renderPageOverlay` prop. Pessimistic save, dirty-state tracking.
+5. **Then Phase E (sidebar cap)** — top 6 by CreatedAt + "View all →" link.
+6. **Then Phase F (polish + build verification)** — `pnpm build` + `pnpm lint` must stay clean.
+7. **Ask user about the open `LastUsedAt` question early** in Phase E. If they want it, it's a `rm app.db*` moment + a small controller tweak in `TemplateFillLoader`.
+8. **`use context7`** for any Tailwind v4 / Next.js 15 / React 19 / pdf-lib / pdfjs-dist uncertainty.
+
+### Key patterns to reuse (don't reinvent)
+
+- **Loader state machine**: `template-fill-loader.tsx` is the template for `template-edit-loader.tsx`.
+- **Inline edit on rule properties**: `lib/hooks/use-inline-edit.ts` (extracted from `inspector-field.tsx` during Voice Phase 2) — rule rows reuse it.
+- **Table aesthetic**: `document-list.tsx` for the `/templates` table layout.
+- **Modal for destructive confirm**: `modal/delete-template-modal.tsx` works as-is.
+- **Input class constants**: `modal/save-template-modal.tsx` has `LABEL_CLASS` / `INPUT_CLASS` / `TEXTAREA_CLASS` / `SEG_*` suitable for the metadata form.
+- **Placeholder consolidation pattern**: `template-fill-placeholder.tsx` (Phase 4) is the model — put loading skeleton + error + not-found panels in one file, import from `loading.tsx` + `not-found.tsx` route conventions + the loader component.
 
 ### Open deferred items (for reference)
 
-- **Finish Day 9 migration** — Sub-batch B + inspector/ + final cleanup. Highest priority; blocks any further styling work.
-- **Seed demo documents** — §6 item 1, highest post-migration priority.
-- **Search / filter on documents table** — §6 item 2.
-- **Template-delete staleness** — §6 item 3; minor, affects only the open-document topbar badge.
-- **Line Items table special-render** — Phase 2 per long-standing note.
-- **Revert button** — Phase 2 per Day 7 triage; needs per-field history or re-run of Azure DI.
+- **Finish Day 9 Tailwind migration** — `document/bounding-box-overlay` + `inspector/*` (both files) + `app/page.module.css` cleanup. No blockers; can happen anytime. Pattern is well-established from the migrated folders; estimate ~half-day.
+- **Seed demo documents** — still not done. §6 item 2.
+- **Required-field export warning** — §6 item 3.
+- **"Edit template" button on fill stage** — §6 item 4. Trivial once edit page exists.
+- **Search / filter on documents table** — §6 item 5.
+- **Template-delete staleness** — §6 item 6.
+- **Line Items table special-render** — §6 item 7.
+- **Voice Phase 4 polish leftovers** (space-bar, aria-live, role=region) — §6 item 8.
+- **`LastUsedAt` column** — Phase 2 per `TEMPLATES_PAGE.md` §7. Requires DB wipe.
+- **Revert button, font matching on export, Teams wrapper, auth, cloud storage, custom-model training, layout-fingerprint matching, compliance layer** — all Phase 2.
 
 ---
 
@@ -669,4 +708,4 @@ The UI draws 1:1 from the Claude Design mock exported to `Document Parsing Servi
 
 ---
 
-_Last updated: 2026-04-22 mid-Day-9 (Tailwind migration in progress). Completed batches: `ui/`, `layout/`, `modal/`, `document/` Sub-batch A (9/10 files). Pending: `document/` Sub-batch B (bounding-box-overlay), `inspector/`, `app/page.module.css`, final cleanup. Day 8 commit + Day 9 progress both uncommitted. shadcn/Radix and `tailwind-variants` / `tailwind-merge` all evaluated and rejected — plain Tailwind v4 + `cn()` (clsx) is the final shape. Demo moved to 2026-04-29 (7 days out)._
+_Last updated: 2026-04-23 end-of-session. Days 1–11 feature work committed on `main`. Day 9 Tailwind migration still PARTIAL — `ui/`, `layout/`, `modal/`, and `document/` Sub-batch A are migrated; `document/bounding-box-overlay`, `inspector/{inspector,inspector-field}`, and `app/page.module.css` remain on CSS Modules. Voice-Fill feature shipped (Phases 1–4, see `context/VOICE_FEATURE.md`). PDF export hardened — CropBox-origin math + local-background-color sampling + ghost opacity dropped for an Acrobat/Sejda-style form-fill UX. Demo date extended one month to ~2026-05-29 (was 2026-04-29). Next up: Templates management surface (full design spec in `context/TEMPLATES_PAGE.md`, six phases, not yet implemented)._
