@@ -74,7 +74,7 @@ export function Inspector({
         <div className={styles.status}>
           <StatusDot tone="ok" label={`${stats.verified} verified`} />
           <StatusDot tone="warn" label={`${stats.issues - stats.lowConf} review`} />
-          <StatusDot tone="err" label={`${stats.lowConf} low-conf`} />
+          <StatusDot tone="err" label={`${stats.lowConf} low confidence`} />
         </div>
         <div className={styles.stats}>
           <Stat n={fields.length} label="Fields" />

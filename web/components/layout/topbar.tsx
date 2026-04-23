@@ -1,3 +1,4 @@
+import Image from "next/image";
 import { LayoutTemplate, Settings } from "lucide-react";
 import { Button } from "../ui/button";
 
@@ -5,12 +6,6 @@ interface TopbarProps {
   documentName?: string;
   templateName?: string | null;
 }
-
-const MARK_STYLE: React.CSSProperties = {
-  background:
-    "linear-gradient(135deg, var(--color-accent) 0%, oklch(0.45 0.16 252) 100%)",
-  boxShadow: "inset 0 -1px 0 rgba(0, 0, 0, 0.15), 0 1px 2px rgba(0, 0, 0, 0.12)",
-};
 
 export function Topbar({ documentName, templateName }: TopbarProps) {
   return (
@@ -22,12 +17,20 @@ export function Topbar({ documentName, templateName }: TopbarProps) {
       ].join(" ")}
     >
       <div className="flex items-center gap-2.5 font-semibold text-[15px] tracking-[-0.01em]">
-        <div
-          className="w-[26px] h-[26px] rounded-md grid place-items-center text-white text-[13px] font-bold"
-          style={MARK_STYLE}
-        >
-          P
-        </div>
+        {/* Decorative — the adjacent "Parsely" text provides the accessible
+            name, so alt="" marks it decorative and avoids double-announcement.
+            `unoptimized` is required for SVG — Next.js blocks them from the
+            Image Optimization API unless dangerouslyAllowSVG is set. */}
+        <Image
+          src="/logo.svg"
+          alt=""
+          aria-hidden="true"
+          width={26}
+          height={26}
+          unoptimized
+          priority
+          className="w-[26px] h-[26px] rounded-md object-contain"
+        />
         <span>Parsely</span>
       </div>
       <nav

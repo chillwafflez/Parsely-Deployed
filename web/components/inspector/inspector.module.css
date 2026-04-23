@@ -117,10 +117,18 @@
   display: flex;
   align-items: center;
   gap: 6px;
+  /* Allow pills to flow onto a second row if the search + three filter
+     pills don't fit — the "Required" pill was clipping at the right edge
+     of the 400px pane when the scrollbar took extra width. */
+  flex-wrap: wrap;
 }
 
 .search {
-  flex: 1;
+  /* `flex: 1` alone leaves min-width at auto (= content size), which can
+     push pills off-row when the placeholder is long. Allow shrink down to
+     a reasonable basis so pills always get their full label. */
+  flex: 1 1 160px;
+  min-width: 160px;
   display: flex;
   align-items: center;
   gap: 6px;

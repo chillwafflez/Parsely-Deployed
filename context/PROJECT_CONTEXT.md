@@ -439,15 +439,58 @@ End-to-end "fill a template by voice, preview, export as PDF" workflow. Full des
 - **Background-color sampling for export masks**: replaced hardcoded white with a local-background sample. New `lib/exporters/sample-background.ts` loads the source PDF via pdf.js (browser-side, reuses react-pdf's pdfjs namespace), renders each affected page to an offscreen canvas at 2× scale (cached), samples a 3px strip on each side of the bbox, takes per-channel median RGB, passes to `pdf-lib`'s `rgb(r/255, g/255, b/255)`. Falls back to white on any failure. `page.cleanup()` + `doc.destroy()` called in `finally` so the worker doesn't leak if pdf-lib throws mid-export.
 - **Ghost-opacity removal from fill stage**: user wanted an Acrobat/Sejda-style full-opacity PDF with form-field overlays instead of the faded "ghost" look. Dropped the `ghost` prop entirely from `PdfDocumentView` + `TemplateFillStage`. Empty slots' `bg-surface-2/90` + dashed border read cleanly as form fields on top of the full PDF — closer to industry form-field aesthetics.
 
+### Day 12 ✅ — Templates management surface (Phases A–F) + sidebar nav highlight fix *(2026-04-23)*
+
+End-to-end CRUD surface for saved templates: index page with row kebab (Edit/Duplicate/Delete), dedicated edit page with metadata form + rule-property editor + ghosted-PDF preview, sidebar top-6 cap + "View all →", backend `PUT /api/templates/:id` + `POST /api/templates/:id/duplicate`. Design was frozen in `context/TEMPLATES_PAGE.md` 2026-04-23 and shipped verbatim the same day across all six phases. **Not yet committed at end of session — pending user-led commits** (one per phase per the frozen spec).
+
+**Phase A — backend atomic update + duplicate endpoints**
+- New DTOs in `api/Contracts/TemplateResponse.cs`: `UpdateTemplateRequest`, `UpdateTemplateRuleRequest`. Added `VendorHint` to `TemplateSummary` (additive — sidebar + documents list don't consume it; Templates index does).
+- `TemplatesController.Update`: loads template + rules, verifies every incoming rule id belongs to the template (returns 400 if not — prevents rule-id guessing against other templates), applies metadata changes, diffs rules by id (in-place update for known ids, `db.TemplateFieldRules.Remove(r)` for omitted ids), single `SaveChangesAsync`. Re-reads `AsNoTracking` before returning so `FromEntity`'s sort-by-name reflects post-save state.
+- `TemplatesController.Duplicate`: no request body — path id is the source. Clones template + all rules with fresh `Id` values; copies `SourceDocumentId` by reference (both templates share the same source doc — the region metadata is still valid); resolves name collisions via a loop (`" (copy)"`, `" (copy 2)"`, `" (copy 3)"`…) matching Finder/Explorer behavior so repeated duplicates never hit a wall.
+- Smoke-test entries added to `DocParsing.Api.http`.
+
+**Phase B — API client + types**
+- `updateTemplate(id, payload)` + `duplicateTemplate(id)` in `lib/api-client.ts`.
+- `UpdateTemplateRequest` + `UpdateTemplateRuleRequest` + `vendorHint` on `TemplateSummary` in `lib/types.ts`.
+
+**Phase C — `/templates` index page**
+- Route files: `app/templates/{page,loading}.tsx`.
+- `components/templates/templates-table.tsx` — row click navigates to `/templates/:id/new` (fill flow); kebab column opens a portaled menu with Edit / Duplicate / Delete.
+- `components/templates/template-row-actions.tsx` — kebab portal menu. **Critical:** menu-root `<div>` has `onClick={(e) => e.stopPropagation()}` + `onMouseDown` handler (see §7 "React portal event bubbling" gotcha — initial ship didn't have this and every menu click was navigating to the fill flow).
+- `components/templates/templates-placeholder.tsx` — skeleton + empty state + error panel; matches `document-list.tsx` aesthetic.
+- Sidebar `Templates` nav entry activated — was `NavButtonPlaceholder` with "Phase 2" tooltip, now a real `NavLink` pointing to `/templates`.
+- Duplicate + delete both call `refreshTemplates()` so sidebar stays in sync with the list on this page.
+
+**Phase D — `/templates/[id]/edit` page**
+- Route files: `app/templates/[id]/edit/{page,loading,not-found}.tsx` — same Next.js 15 + React 19 `use()` unwrap pattern as `/templates/[id]/new`.
+- `template-edit-loader.tsx` — state machine (loading | ready | not-found | error) mirroring `template-fill-loader.tsx`.
+- `template-edit-stage.tsx` — owns the canonical edit draft + snapshot. **Dirty tracking** via `JSON.stringify(draft) !== JSON.stringify(snapshot)` (prototype-grade; adequate for <100-rule templates). **Pessimistic save**: rolls back to snapshot + toast on error so the UI never silently diverges from the server. `beforeunload` guard for tab close; `window.confirm` on Cancel for in-app nav (Next.js App Router has no first-class block-nav hook).
+- `template-metadata-form.tsx` — Name / Description / Kind / VendorHint form. `LABEL_CLASS` / `INPUT_CLASS` / `TEXTAREA_CLASS` constants exported so `template-rule-row.tsx` can reuse them.
+- `template-rules-editor.tsx` + `template-rule-row.tsx` — collapsed row = name button + data-type select + required checkbox + chevron + trash. Expanded = name input + voice hint + aliases. Delete is a **soft delete** — sets `removed: true` on the draft, row stays visible with strike-through + err-weak bg. Icon-only Undo button (`Undo2` from lucide, 26×26 same footprint as the trash) restores it. Actual server rule deletion happens atomically on Save.
+- `template-preview-pane.tsx` — ghosted read-only PDF. Reuses `PdfDocumentView`'s `renderPageOverlay` prop. Bboxes labeled with the (possibly-edited) rule name; fallback panel when `sourceDocumentId` points to a deleted doc. **No bbox editing** — out of scope per the frozen design.
+
+**Phase E — sidebar top-6 cap**
+- `SIDEBAR_TEMPLATE_CAP = 6` in `sidebar.tsx`. The API already returns `OrderByDescending(CreatedAt)`, so `.slice(0, 6)` gives the most-recently-created.
+- "View all N →" link under the list when `templates.length > 6`; links to `/templates`.
+- Picked CreatedAt-desc over `LastUsedAt` for V1 per `TEMPLATES_PAGE.md` §7 — the open question is deferred to Phase 2 for now (requires `rm app.db*`).
+
+**Phase F — build + lint clean**
+- `pnpm build`, `pnpm lint`, `tsc --noEmit`, `dotnet build -t:CoreCompile`: all zero warnings / zero errors. Route table shows both `/templates` (static) and `/templates/[id]/edit` (dynamic).
+
+**Post-ship bug fixes (same session, same day)**
+- **React portal event bubbling.** Kebab-menu Edit/Delete clicks were navigating to the fill flow. Root cause: React's `createPortal` propagates events through the React component tree, not the DOM tree (confirmed against react.dev docs via context7). The `MenuItem` onClick → `Menu` → `TemplateRowActions` → `<td>` → `<tr>` path meant the row's navigate-to-fill onClick fired after every menu click. Fix: `onClick={(e) => e.stopPropagation()}` on the Menu root `<div>`. Also stopped `onMouseDown` defensively. See §7 gotcha for the full pattern.
+- **Undo button clipping.** Text "Undo" needed ~44px but the row grid column was 26px, and the rules-editor card's `overflow-hidden` clipped the overflow. Fix: replaced the text with the `Undo2` icon, same 26×26 footprint as the trash.
+- **Sidebar nav highlight regression** (unrelated to Templates — discovered while testing the new nav link). Active-page blue pill wasn't rendering on *any* nav link. Root cause: `NAV_ITEM_BASE` contained `bg-transparent`, and the active-state ternary added `bg-accent-weak`. In the generated `layout.css`, `.bg-accent-weak` is emitted at line ~992 and `.bg-transparent` at ~1040 — at equal specificity source order wins and `bg-transparent` clobbered the active tint. This is exactly the footgun CLAUDE.md §Tailwind-v4 warns about. Fix: removed `bg-transparent` from the base; `NavLink`'s inactive branch and `NavButtonPlaceholder` now add it explicitly, so active and inactive are mutually exclusive.
+
 ---
 
 ## 6. What's next — runway
 
-Demo is **2026-05-29** (~5 weeks out as of 2026-04-23 — user extended the original 2026-04-29 deadline by a month, so the pressure is off; invest in feature depth rather than shipping-MVP-and-polishing). All three core value props are functional (parse, correct, teach-via-template), URL routing works, history page exists, template deletion works, polish pass done, components/ folder reorganized, Tailwind migration complete, Voice-Fill feature complete, PDF export matured (CropBox-correct + local-background-sampled masks).
+Demo is **2026-05-29** (~5 weeks out as of 2026-04-23 — user extended the original 2026-04-29 deadline by a month, so the pressure is off; invest in feature depth rather than shipping-MVP-and-polishing). All three core value props are functional (parse, correct, teach-via-template), URL routing works, history page exists, template CRUD + management surface complete, polish pass done, components/ folder reorganized, Tailwind migration mostly complete (see Day 9 outstanding), Voice-Fill feature complete, PDF export matured (CropBox-correct + local-background-sampled masks).
 
-### Up next — Templates management surface
+### Near-term decisions
 
-1. **Build the `/templates` page + `/templates/:id/edit` page + duplicate action.** Full design spec in `context/TEMPLATES_PAGE.md` (frozen 2026-04-23, not yet implemented). Scope: table index with row kebab (Edit/Duplicate/Delete), dedicated edit page with metadata form + rule-property editor (no bbox editing) + ghosted-PDF preview, sidebar "top 6 + View all", new backend `PUT /api/templates/:id` + `POST /api/templates/:id/duplicate`. Six phases, each committable.
+1. **`LastUsedAt` on templates — decide now or defer.** Sidebar currently caps "top 6 recent" by `CreatedAt`, which means heavily-used older templates fall off as the library grows. Upgrading to `LastUsedAt` is cheap: one nullable column on `Template`, a one-line write in `TemplateFillLoader` on template load, and the sidebar `slice` switches its sort key. Cost: `rm api/app.db*` (wipes all saved templates + uploaded docs). The cost only grows as more real templates accumulate, so decide early if yes.
 
 ### Demo-critical
 
@@ -459,7 +502,7 @@ Demo is **2026-05-29** (~5 weeks out as of 2026-04-23 — user extended the orig
 ### Demo-nice-to-have (if time)
 
 3. **Required-field export warning** on the fill stage. Noted during Templates design on 2026-04-23 — when the user clicks Export PDF with required rules empty, warn (but don't block; they drove). Small surface.
-4. **"Edit template" button on the fill stage** — quick jump from fill into edit. Noted as a §7 recommendation in `TEMPLATES_PAGE.md`.
+4. **"Edit template" button on the fill stage** — quick jump from `/templates/:id/new` into `/templates/:id/edit`. Trivial now that the edit page exists; `TEMPLATES_PAGE.md` §7 recommended it.
 5. **Search / filter on the documents table.** Filename search, template-match filter, sortable columns. DocumentList is presentation-only today.
 6. **Fix template-delete staleness for the currently-viewed document.** Add `refreshDocument` to `AppShellContext`; DocumentLoader exposes it. Sidebar's delete handler calls it when `activeTemplateId === deletedId`.
 7. **Line Items dedicated renderer.** Azure DI's `Items` field is a list-of-dictionaries currently shown as raw content. Design mock has a mini-table in the Inspector.
@@ -467,7 +510,6 @@ Demo is **2026-05-29** (~5 weeks out as of 2026-04-23 — user extended the orig
 
 ### Deferred to Phase 2 (post-demo)
 
-- **`LastUsedAt` on templates.** Would upgrade sidebar "top 6 recent" from "recently created" to "recently used". Small schema change (`rm app.db*`), deferred per `TEMPLATES_PAGE.md` §7.
 - **Font matching on PDF export.** Considered and dismissed — Adobe Acrobat's own font matching is often off, effort/value is poor at prototype scope.
 - **Revert button.** Proper implementation needs either re-running Azure DI (expensive + discards user-drawn fields) or storing original values per field (schema change + per-field history). Neither is cheap. The demo never needs to revert.
 - **Microsoft Teams tab wrapper.** Re-skin with Fluent UI likely required. ~1 day.
@@ -519,6 +561,8 @@ Demo is **2026-05-29** (~5 weeks out as of 2026-04-23 — user extended the orig
 **`file-name` prop on react-pdf `Page.className`.** We use the `className` prop directly; CSS Modules work but the `react-pdf__Page__canvas` child needs a `:global()` selector if you need to style it. We avoid this by controlling the canvas display with wrapper styles.
 
 **Next.js 15 dynamic `params` are a Promise.** `/documents/[id]/page.tsx` receives `params: Promise<{ id: string }>` and must unwrap with React 19's `use()` — destructuring directly throws. Kept as a client component so `use()` works naturally; server components would need the same `use()` call with `await`.
+
+**React portal event bubbling goes through the React tree, not the DOM.** From react.dev `createPortal` caveats (verified via context7): "Events from portals propagate according to the React tree rather than the DOM tree... If this causes issues, either stop the event propagation from inside the portal, or move the portal itself up in the React tree." Hit in Day 12: kebab menu clicks in the Templates index were bubbling up to the `<tr>`'s navigate-to-fill handler even though the menu was portaled to `document.body`. Fix pattern: `onClick={(e) => e.stopPropagation()}` (and `onMouseDown` defensively) on the portaled wrapper `<div>`. Apply the same pattern to any portaled menu/popover nested inside a clickable container.
 
 **`usePathname()` requires `"use client"` at the top of the file that calls it.** Sidebar's active-state detection uses `usePathname()` + `next/link`. When rendered inside another client boundary (AppShell), it works only because the file itself is also marked client. Deriving active state from router state (not internal sidebar view state) is the industry-standard Next.js App Router pattern.
 
@@ -630,47 +674,48 @@ The UI draws 1:1 from the Claude Design mock exported to `Document Parsing Servi
 
 **2026-04-23 end of session:**
 
-- Days 1–11 feature work complete. Demo date extended one month to ~2026-05-29; no urgent runway pressure.
-- **Voice-Fill feature shipped** (Phases 1–4, commits `3861a35`/`2fc5085`/`99fdae7`) — full design spec still lives in `context/VOICE_FEATURE.md` for reference.
-- **Day 9 Tailwind migration is STILL IN PROGRESS** — `ui/`, `layout/`, `modal/`, `document/` Sub-batch A are migrated and committed. `document/bounding-box-overlay`, both `inspector/*` files, and `app/page.module.css` still use CSS Modules. (Verified 2026-04-23 via `find web -name "*.module.css"`.)
-- **PDF export hardened** in Day 11: CropBox-origin math fix (eliminates vertical offset on PDFs with non-zero MediaBox y), local background-color sampling via pdf.js (masks blend with surrounding page instead of hard white), ghost opacity dropped (full-opacity PDF behind field slots, Acrobat/Sejda-style).
-- **Templates management surface is the next feature.** Design frozen 2026-04-23 in `context/TEMPLATES_PAGE.md`. Not yet implemented. All five open UX questions answered by the user; six sequential phases planned.
+- Days 1–12 feature work complete. Demo date still **2026-05-29**; no urgent runway pressure.
+- **Templates management surface shipped this session** (Phases A–F, see Day 12). All six phases landed: backend `PUT /api/templates/:id` + `POST /api/templates/:id/duplicate`, `/templates` index, `/templates/[id]/edit`, sidebar top-6 cap + "View all →", build/lint clean. Verified by the user — Edit / Duplicate / Delete all work after the portal-bubbling fix.
+- **Day 12 work NOT YET COMMITTED.** Working tree has all of: `api/Contracts/TemplateResponse.cs`, `api/Controllers/TemplatesController.cs`, `api/DocParsing.Api.http`, `web/lib/{types.ts,api-client.ts}`, `web/app/templates/**` (new), `web/components/templates/**` (new), `web/components/layout/sidebar.tsx`, and this `context/PROJECT_CONTEXT.md` update. Latest commit on `main` is still `99fdae7`.
+- **Day 9 Tailwind migration STILL PARTIAL** — `ui/`, `layout/`, `modal/`, `document/` Sub-batch A migrated and committed; `document/bounding-box-overlay`, both `inspector/*` files, and `app/page.module.css` still use CSS Modules. Unchanged this session.
+- **Voice-Fill feature shipped** (Day 10 Phases 1–4, commits `3861a35`/`2fc5085`/`99fdae7`). Full design in `context/VOICE_FEATURE.md`.
 
 ### Current git state
 
-Clean working tree relative to scope — only a `web/components/layout/topbar.tsx` local modification and the newly-added `context/TEMPLATES_PAGE.md` / updated `PROJECT_CONTEXT.md` (this update). Latest commit `99fdae7` on `main`.
+- Working tree dirty — all Day 12 changes uncommitted.
+- `TEMPLATES_PAGE.md` §6 planned one commit per phase (`feat(templates): add PUT update + POST duplicate endpoints`, etc.); if you'd rather bundle, that's fine — they all shipped in one session.
 
 ### First actions for the next session
 
-1. **Start Phase A of Templates work** per `context/TEMPLATES_PAGE.md`. Phase A is the backend — `PUT /api/templates/:id` + `POST /api/templates/:id/duplicate`. Contract DTOs go in `api/Contracts/TemplateResponse.cs`. Respect the single-`SaveChangesAsync` rule (§7 gotcha). Verify via the existing `.http` file.
-2. **Then Phase B (API client)** — thin wrappers in `lib/api-client.ts`, types in `lib/types.ts`. No UI yet.
-3. **Then Phase C (`/templates` index page)** — table mirroring `DocumentList`, row-click-to-use, kebab menu with Edit/Duplicate/Delete. Enables the sidebar nav (currently a `NavButtonPlaceholder` with tooltip "Phase 2" — replace with real `NavLink`).
-4. **Then Phase D (`/templates/[id]/edit`)** — two-pane editor, metadata form + rules editor + ghosted-PDF preview. Reuses `PdfDocumentView`'s `renderPageOverlay` prop. Pessimistic save, dirty-state tracking.
-5. **Then Phase E (sidebar cap)** — top 6 by CreatedAt + "View all →" link.
-6. **Then Phase F (polish + build verification)** — `pnpm build` + `pnpm lint` must stay clean.
-7. **Ask user about the open `LastUsedAt` question early** in Phase E. If they want it, it's a `rm app.db*` moment + a small controller tweak in `TemplateFillLoader`.
-8. **`use context7`** for any Tailwind v4 / Next.js 15 / React 19 / pdf-lib / pdfjs-dist uncertainty.
+1. **Commit the Day 12 work** — either six per-phase commits per `TEMPLATES_PAGE.md` §6, or a single `feat(templates): ship management surface (Phases A–F)` commit if bundling. User runs commits themselves.
+2. **Decide the `LastUsedAt` question** (§6 item 1). If yes: add nullable `DateTime? LastUsedAt` to `Template`, wire a one-line write in `TemplateFillLoader` on load, swap sidebar `slice` sort key. Cost is `rm api/app.db*`. If the answer is "defer again," leave sidebar cap on CreatedAt indefinitely.
+3. **"Edit template" button on the fill stage** (§6 item 4) — trivial now that `/templates/:id/edit` exists; just a `<Button>` in `template-fill-stage.tsx`'s toolbar that `router.push`es to `/templates/:id/edit`. ~10 minutes.
+4. **Start seeding demo docs** (§6 item 2) — still outstanding, demo-critical. Options in §6.
+5. Consider picking up any §6 demo-nice-to-have item (required-field export warning, search/filter on documents table, template-delete staleness fix, Line Items renderer, Voice Phase 4 polish leftovers).
+6. **`use context7`** for any Tailwind v4 / Next.js 15 / React 19 / pdf-lib / pdfjs-dist uncertainty.
 
-### Key patterns to reuse (don't reinvent)
+### Key patterns now established (reuse — don't reinvent)
 
-- **Loader state machine**: `template-fill-loader.tsx` is the template for `template-edit-loader.tsx`.
-- **Inline edit on rule properties**: `lib/hooks/use-inline-edit.ts` (extracted from `inspector-field.tsx` during Voice Phase 2) — rule rows reuse it.
-- **Table aesthetic**: `document-list.tsx` for the `/templates` table layout.
+- **Loader state machine**: `template-fill-loader.tsx` + `template-edit-loader.tsx` are the model. Discriminated union over `loading | ready | not-found | error`; `notFound()` called during render, not in an effect.
+- **Inline edit on rule/field properties**: `lib/hooks/use-inline-edit.ts` — rule rows reuse it.
+- **Table aesthetic**: `document-list.tsx` or `templates-table.tsx` (Day 12) — `group`/`group-hover:bg-accent-weak`, shared `BODY_CELL` const, kebab column via portaled menu.
+- **Portaled action menu**: `template-row-actions.tsx` — portal to `document.body`, `onClick={(e) => e.stopPropagation()}` on the root to prevent bubbling back through the React tree, document-level mousedown listener to close on outside click.
 - **Modal for destructive confirm**: `modal/delete-template-modal.tsx` works as-is.
-- **Input class constants**: `modal/save-template-modal.tsx` has `LABEL_CLASS` / `INPUT_CLASS` / `TEXTAREA_CLASS` / `SEG_*` suitable for the metadata form.
-- **Placeholder consolidation pattern**: `template-fill-placeholder.tsx` (Phase 4) is the model — put loading skeleton + error + not-found panels in one file, import from `loading.tsx` + `not-found.tsx` route conventions + the loader component.
+- **Input class constants**: `template-metadata-form.tsx` exports `LABEL_CLASS` / `INPUT_CLASS` / `TEXTAREA_CLASS`; `save-template-modal.tsx` has matching + `SEG_*` variants.
+- **Placeholder consolidation**: `template-fill-placeholder.tsx` + `template-edit-placeholder.tsx` + `templates-placeholder.tsx` — each co-locates loading skeleton + error + not-found panels in one file, imported from `loading.tsx` + `not-found.tsx` route conventions + the loader component.
+- **Pessimistic save with snapshot rollback**: `template-edit-stage.tsx` — `JSON.stringify` dirty check, rollback to snapshot on error, beforeunload guard for tab close, window.confirm for in-app Cancel.
 
 ### Open deferred items (for reference)
 
-- **Finish Day 9 Tailwind migration** — `document/bounding-box-overlay` + `inspector/*` (both files) + `app/page.module.css` cleanup. No blockers; can happen anytime. Pattern is well-established from the migrated folders; estimate ~half-day.
+- **Finish Day 9 Tailwind migration** — `document/bounding-box-overlay` + `inspector/*` (both files) + `app/page.module.css`. No blockers; pattern is well-established; estimate ~half-day.
 - **Seed demo documents** — still not done. §6 item 2.
 - **Required-field export warning** — §6 item 3.
-- **"Edit template" button on fill stage** — §6 item 4. Trivial once edit page exists.
+- **"Edit template" button on fill stage** — §6 item 4.
 - **Search / filter on documents table** — §6 item 5.
-- **Template-delete staleness** — §6 item 6.
+- **Template-delete staleness** on the currently-viewed document — §6 item 6.
 - **Line Items table special-render** — §6 item 7.
 - **Voice Phase 4 polish leftovers** (space-bar, aria-live, role=region) — §6 item 8.
-- **`LastUsedAt` column** — Phase 2 per `TEMPLATES_PAGE.md` §7. Requires DB wipe.
+- **`LastUsedAt` column** — §6 item 1 near-term decision.
 - **Revert button, font matching on export, Teams wrapper, auth, cloud storage, custom-model training, layout-fingerprint matching, compliance layer** — all Phase 2.
 
 ---
@@ -705,7 +750,8 @@ Clean working tree relative to scope — only a `web/components/layout/topbar.ts
 - Don't use `outline-<N> outline-<color>` alone for focus rings — `outline-style` defaults to `none` so nothing renders. Use `outline-[2px_solid_var(--color-x)]` arbitrary shorthand (Day 9 lesson).
 - Don't re-declare keyframe animations inside individual CSS Modules. Promote them to `@theme` in `globals.css` as `--animate-<name>` tokens so they auto-generate a utility (Day 9 pattern).
 - Don't cram long multi-value CSS (radial-gradient stacks, composite box-shadows) into `className="bg-[...]"` arbitraries. Extract to a module-scoped inline-style constant — readability wins (Day 9 pattern).
+- Don't let portaled menu/popover clicks propagate to the clickable container around their trigger. React synthetic events bubble through the React tree even for `createPortal` children — stop propagation on the portal root `<div>` or move the portal up in the tree (Day 12 lesson).
 
 ---
 
-_Last updated: 2026-04-23 end-of-session. Days 1–11 feature work committed on `main`. Day 9 Tailwind migration still PARTIAL — `ui/`, `layout/`, `modal/`, and `document/` Sub-batch A are migrated; `document/bounding-box-overlay`, `inspector/{inspector,inspector-field}`, and `app/page.module.css` remain on CSS Modules. Voice-Fill feature shipped (Phases 1–4, see `context/VOICE_FEATURE.md`). PDF export hardened — CropBox-origin math + local-background-color sampling + ghost opacity dropped for an Acrobat/Sejda-style form-fill UX. Demo date extended one month to ~2026-05-29 (was 2026-04-29). Next up: Templates management surface (full design spec in `context/TEMPLATES_PAGE.md`, six phases, not yet implemented)._
+_Last updated: 2026-04-23 end-of-session. Days 1–12 feature work complete; Day 12 (Templates management surface — Phases A–F) NOT YET COMMITTED on `main` (latest commit still `99fdae7`). Day 9 Tailwind migration still PARTIAL — `ui/`, `layout/`, `modal/`, and `document/` Sub-batch A are migrated; `document/bounding-box-overlay`, `inspector/{inspector,inspector-field}`, and `app/page.module.css` remain on CSS Modules. Voice-Fill feature shipped (Phases 1–4, see `context/VOICE_FEATURE.md`). PDF export hardened — CropBox-origin math + local-background-color sampling + ghost opacity dropped for an Acrobat/Sejda-style form-fill UX. Demo date ~2026-05-29. Templates management surface shipped (see Day 12): index + edit + duplicate + top-6 sidebar cap + atomic PUT/duplicate endpoints. Next up: commit Day 12, decide `LastUsedAt` question, "Edit template" button on fill stage, seed demo docs._
