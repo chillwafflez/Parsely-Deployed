@@ -8,6 +8,7 @@ import type {
   SpeechToken,
   Template,
   TemplateSummary,
+  UpdateTemplateRequest,
   VoiceFillRequest,
   VoiceFillResponse,
 } from "./types";
@@ -138,6 +139,37 @@ export async function deleteTemplate(id: string): Promise<void> {
     const body = await res.text();
     throw new Error(`Delete template failed (${res.status}): ${body || res.statusText}`);
   }
+}
+
+export async function updateTemplate(
+  id: string,
+  payload: UpdateTemplateRequest
+): Promise<Template> {
+  const res = await fetch(`${API_BASE}/api/templates/${id}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`Update template failed (${res.status}): ${body || res.statusText}`);
+  }
+
+  return res.json();
+}
+
+export async function duplicateTemplate(id: string): Promise<Template> {
+  const res = await fetch(`${API_BASE}/api/templates/${id}/duplicate`, {
+    method: "POST",
+  });
+
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`Duplicate template failed (${res.status}): ${body || res.statusText}`);
+  }
+
+  return res.json();
 }
 
 export async function fetchSpeechToken(): Promise<SpeechToken> {

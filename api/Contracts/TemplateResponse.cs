@@ -10,6 +10,7 @@ public record TemplateSummary(
     string Kind,
     string? Description,
     string ApplyTo,
+    string? VendorHint,
     DateTime CreatedAt,
     int RuleCount,
     int Runs);
@@ -85,3 +86,25 @@ public record CreateTemplateRequest(
     [Required, RegularExpression("^(vendor|similar|all)$")] string ApplyTo,
     [Required] Guid SourceDocumentId,
     IDictionary<string, RuleOverride>? RuleOverrides = null);
+
+/// <summary>
+/// Full-replace payload for the template edit page. Metadata is applied as-is;
+/// the Rules collection is reconciled against the persisted rules by Id —
+/// existing ids are updated in place, omitted ids are deleted. Adding new
+/// rules is out of scope (requires a bounding region, which requires the
+/// full PDF + draw tooling).
+/// </summary>
+public record UpdateTemplateRequest(
+    [Required, StringLength(256, MinimumLength = 1)] string Name,
+    [StringLength(2048)] string? Description,
+    [Required, StringLength(64, MinimumLength = 1)] string Kind,
+    [StringLength(512)] string? VendorHint,
+    [Required] IReadOnlyList<UpdateTemplateRuleRequest> Rules);
+
+public record UpdateTemplateRuleRequest(
+    [Required] Guid Id,
+    [Required, StringLength(256, MinimumLength = 1)] string Name,
+    [Required, StringLength(64, MinimumLength = 1)] string DataType,
+    bool IsRequired,
+    [StringLength(200)] string? Hint,
+    IReadOnlyList<string>? Aliases);

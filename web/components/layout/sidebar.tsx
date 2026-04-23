@@ -29,11 +29,24 @@ interface SidebarProps {
   queueCount: number;
 }
 
+/**
+ * Maximum number of template cards rendered directly in the sidebar.
+ * Overflow is reachable via the "View all" link to `/templates`, where the
+ * full library can be managed (edit / duplicate / delete).
+ */
+const SIDEBAR_TEMPLATE_CAP = 6;
+
+// Background color is intentionally left OUT of the base — callers apply
+// `bg-accent-weak` (active) or `bg-transparent` (inactive) via mutually
+// exclusive ternaries. Stacking both here caused the generated CSS to emit
+// `.bg-transparent` after `.bg-accent-weak`, and at equal specificity source
+// order wins — so the active blue tint never actually rendered. See
+// CLAUDE.md §Tailwind-v4 "mutually exclusive ternaries" rule.
 const NAV_ITEM_BASE = cn(
   "flex items-center gap-3 w-full",
   "py-[9px] px-3 rounded-md",
   "font-ui text-[14px] font-medium text-left no-underline",
-  "bg-transparent border-0 cursor-pointer",
+  "border-0 cursor-pointer",
   "hover:enabled:bg-surface-2",
   "disabled:opacity-[0.55] disabled:cursor-not-allowed",
   "[&_svg]:opacity-80"
@@ -100,11 +113,12 @@ export function Sidebar({
           count={queueCount}
           title="Batch queue — Phase 2"
         />
-        <NavButtonPlaceholder
+        <NavLink
+          href="/templates"
           icon={<LayoutTemplate size={17} />}
           label="Templates"
           count={templates.length}
-          title="Templates browser — Phase 2"
+          active={pathname.startsWith("/templates")}
         />
       </div>
 
@@ -138,15 +152,32 @@ export function Sidebar({
             No templates yet. Save one after reviewing a parse.
           </p>
         ) : (
-          templates.map((t) => (
-            <TemplateCard
-              key={t.id}
-              template={t}
-              active={t.id === activeTemplateId}
-              onPick={() => onPickTemplate(t.id)}
-              onRequestDelete={() => setPendingDelete(t)}
-            />
-          ))
+          <>
+            {/* API already returns templates by CreatedAt desc — slice to
+                the top 6 so the sidebar doesn't scroll indefinitely as the
+                library grows. Management lives on /templates. */}
+            {templates.slice(0, SIDEBAR_TEMPLATE_CAP).map((t) => (
+              <TemplateCard
+                key={t.id}
+                template={t}
+                active={t.id === activeTemplateId}
+                onPick={() => onPickTemplate(t.id)}
+                onRequestDelete={() => setPendingDelete(t)}
+              />
+            ))}
+            {templates.length > SIDEBAR_TEMPLATE_CAP && (
+              <Link
+                href="/templates"
+                className={cn(
+                  "block py-[7px] px-2.5 mt-1 rounded-md",
+                  "text-ink-3 text-[11.5px] font-medium no-underline",
+                  "hover:bg-surface-2 hover:text-ink"
+                )}
+              >
+                View all {templates.length} →
+              </Link>
+            )}
+          </>
         )}
       </div>
 
@@ -259,7 +290,7 @@ function NavLink({ href, icon, label, count, active }: NavLinkProps) {
       aria-current={active ? "page" : undefined}
       className={cn(
         NAV_ITEM_BASE,
-        active ? "bg-accent-weak text-accent-ink" : "text-ink-2"
+        active ? "bg-accent-weak text-accent-ink" : "bg-transparent text-ink-2"
       )}
     >
       {icon}
@@ -316,7 +347,7 @@ function NavButtonPlaceholder({
   return (
     <button
       type="button"
-      className={cn(NAV_ITEM_BASE, "text-ink-2")}
+      className={cn(NAV_ITEM_BASE, "bg-transparent text-ink-2")}
       title={title}
       disabled
     >

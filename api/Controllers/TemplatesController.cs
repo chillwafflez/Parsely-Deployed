@@ -22,6 +22,7 @@ public class TemplatesController(AppDbContext db, ILogger<TemplatesController> l
                 t.Kind,
                 t.Description,
                 t.ApplyTo,
+                t.VendorHint,
                 t.CreatedAt,
                 t.Rules.Count,
                 db.Documents.Count(d => d.TemplateId == t.Id)))
@@ -125,6 +126,128 @@ public class TemplatesController(AppDbContext db, ILogger<TemplatesController> l
             value: TemplateResponse.FromEntity(template, runs: 1));
     }
 
+    [HttpPut("{id:guid}")]
+    public async Task<ActionResult<TemplateResponse>> Update(
+        Guid id,
+        [FromBody] UpdateTemplateRequest request,
+        CancellationToken ct)
+    {
+        if (!ModelState.IsValid) return ValidationProblem(ModelState);
+
+        var template = await db.Templates
+            .Include(t => t.Rules)
+            .FirstOrDefaultAsync(t => t.Id == id, ct);
+
+        if (template is null) return NotFound();
+
+        // Reject any incoming id that doesn't belong to this template — this
+        // prevents a caller from guessing a rule id on another template and
+        // mutating it through this endpoint.
+        var existingById = template.Rules.ToDictionary(r => r.Id);
+        foreach (var incoming in request.Rules)
+        {
+            if (!existingById.ContainsKey(incoming.Id))
+            {
+                return BadRequest(new { error = $"Rule {incoming.Id} does not belong to this template." });
+            }
+        }
+
+        template.Name = request.Name.Trim();
+        template.Description = string.IsNullOrWhiteSpace(request.Description) ? null : request.Description.Trim();
+        template.Kind = request.Kind.Trim();
+        template.VendorHint = string.IsNullOrWhiteSpace(request.VendorHint) ? null : request.VendorHint.Trim();
+
+        var incomingIds = request.Rules.Select(r => r.Id).ToHashSet();
+
+        // Build the full mutation graph before persisting so we only call
+        // SaveChangesAsync once — double-save triggers DbUpdateConcurrencyException
+        // on EF Core when the change tracker sees the collection replaced twice.
+        foreach (var rule in template.Rules.ToList())
+        {
+            if (!incomingIds.Contains(rule.Id))
+            {
+                db.TemplateFieldRules.Remove(rule);
+            }
+        }
+
+        foreach (var incoming in request.Rules)
+        {
+            var rule = existingById[incoming.Id];
+            rule.Name = incoming.Name.Trim();
+            rule.DataType = incoming.DataType.Trim();
+            rule.IsRequired = incoming.IsRequired;
+            rule.Hint = string.IsNullOrWhiteSpace(incoming.Hint) ? null : incoming.Hint.Trim();
+            rule.SetAliases(incoming.Aliases);
+        }
+
+        await db.SaveChangesAsync(ct);
+
+        var runs = await db.Documents.CountAsync(d => d.TemplateId == id, ct);
+
+        // Re-read with AsNoTracking so the response reflects the canonical
+        // persisted shape (FromEntity sorts rules by Name, and any deletes
+        // above shouldn't leave stale tracked instances in the payload).
+        var refreshed = await db.Templates
+            .Include(t => t.Rules)
+            .AsNoTracking()
+            .FirstAsync(t => t.Id == id, ct);
+
+        logger.LogInformation(
+            "Updated template {TemplateId} ({Name}) — {RuleCount} rules after reconcile",
+            refreshed.Id, refreshed.Name, refreshed.Rules.Count);
+
+        return Ok(TemplateResponse.FromEntity(refreshed, runs));
+    }
+
+    [HttpPost("{id:guid}/duplicate")]
+    public async Task<ActionResult<TemplateResponse>> Duplicate(Guid id, CancellationToken ct)
+    {
+        var source = await db.Templates
+            .Include(t => t.Rules)
+            .AsNoTracking()
+            .FirstOrDefaultAsync(t => t.Id == id, ct);
+
+        if (source is null) return NotFound();
+
+        var newName = await ResolveDuplicateNameAsync(source.Name, ct);
+
+        var copy = new Template
+        {
+            Id = Guid.NewGuid(),
+            Name = newName,
+            Kind = source.Kind,
+            Description = source.Description,
+            ApplyTo = source.ApplyTo,
+            VendorHint = source.VendorHint,
+            SourceDocumentId = source.SourceDocumentId,
+            CreatedAt = DateTime.UtcNow,
+            Rules = source.Rules
+                .Select(r => new TemplateFieldRule
+                {
+                    Id = Guid.NewGuid(),
+                    Name = r.Name,
+                    DataType = r.DataType,
+                    IsRequired = r.IsRequired,
+                    BoundingRegionsJson = r.BoundingRegionsJson,
+                    Hint = r.Hint,
+                    AliasesJson = r.AliasesJson,
+                })
+                .ToList(),
+        };
+
+        db.Templates.Add(copy);
+        await db.SaveChangesAsync(ct);
+
+        logger.LogInformation(
+            "Duplicated template {SourceId} → {NewId} ({Name}) with {RuleCount} rules",
+            source.Id, copy.Id, copy.Name, copy.Rules.Count);
+
+        return CreatedAtAction(
+            actionName: nameof(Get),
+            routeValues: new { id = copy.Id },
+            value: TemplateResponse.FromEntity(copy, runs: 0));
+    }
+
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> Delete(Guid id, CancellationToken ct)
     {
@@ -135,5 +258,22 @@ public class TemplatesController(AppDbContext db, ILogger<TemplatesController> l
         await db.SaveChangesAsync(ct);
 
         return NoContent();
+    }
+
+    /// <summary>
+    /// Picks a non-colliding "(copy)" / "(copy 2)" / "(copy 3)" name for a
+    /// duplicated template. Matches Finder/Explorer behavior — the user never
+    /// hits a wall if they duplicate repeatedly.
+    /// </summary>
+    private async Task<string> ResolveDuplicateNameAsync(string baseName, CancellationToken ct)
+    {
+        var candidate = $"{baseName} (copy)";
+        if (!await db.Templates.AnyAsync(t => t.Name == candidate, ct)) return candidate;
+
+        for (var n = 2; ; n++)
+        {
+            candidate = $"{baseName} (copy {n})";
+            if (!await db.Templates.AnyAsync(t => t.Name == candidate, ct)) return candidate;
+        }
     }
 }

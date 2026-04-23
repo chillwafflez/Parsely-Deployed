@@ -120,6 +120,7 @@ export interface TemplateSummary {
   kind: string;
   description: string | null;
   applyTo: TemplateApplyTo;
+  vendorHint: string | null;
   createdAt: string;
   ruleCount: number;
   runs: number;
@@ -170,6 +171,28 @@ export interface CreateTemplatePayload {
   applyTo: TemplateApplyTo;
   sourceDocumentId: string;
   ruleOverrides?: Record<string, RuleOverride>;
+}
+
+/**
+ * PUT body for the template edit page. Server replaces the rule collection
+ * with the payload: each incoming id must belong to the template, and any
+ * persisted rule whose id isn't present in `rules` is deleted.
+ */
+export interface UpdateTemplateRequest {
+  name: string;
+  description: string | null;
+  kind: string;
+  vendorHint: string | null;
+  rules: UpdateTemplateRuleRequest[];
+}
+
+export interface UpdateTemplateRuleRequest {
+  id: string;
+  name: string;
+  dataType: string;
+  isRequired: boolean;
+  hint: string | null;
+  aliases: string[];
 }
 
 /** Response of GET /api/voice/token — short-lived JWT for the browser Speech SDK. */

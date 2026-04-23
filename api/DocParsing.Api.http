@@ -15,6 +15,33 @@ GET {{base}}/api/templates
 ### Get a template by id (inspect Hint + Aliases on each rule)
 GET {{base}}/api/templates/REPLACE_WITH_TEMPLATE_GUID
 
+### Update a template (metadata + rules reconcile). Omit any rule id from
+### the Rules array to delete that rule. Sending an id that doesn't belong
+### to this template returns 400.
+PUT {{base}}/api/templates/REPLACE_WITH_TEMPLATE_GUID
+Content-Type: application/json
+
+{
+  "name": "Acme Invoice (edited)",
+  "description": "Updated notes",
+  "kind": "Invoice",
+  "vendorHint": "Acme Corp",
+  "rules": [
+    {
+      "id": "REPLACE_WITH_RULE_GUID",
+      "name": "InvoiceTotal",
+      "dataType": "currency",
+      "isRequired": true,
+      "hint": "The grand total at the bottom",
+      "aliases": ["total", "grand total"]
+    }
+  ]
+}
+
+### Duplicate a template (clones template + all rules with new ids,
+### appends " (copy)" to the name, resolves collisions).
+POST {{base}}/api/templates/REPLACE_WITH_TEMPLATE_GUID/duplicate
+
 
 ### ----- Voice: mint a short-lived Azure Speech JWT for the browser -----
 # Requires Speech:Key + Speech:Region via dotnet user-secrets.
