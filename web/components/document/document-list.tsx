@@ -1,26 +1,33 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Clock, FileText, LayoutTemplate, Upload } from "lucide-react";
-import { Button } from "../ui/button";
 import { ErrorBanner } from "../ui/error-banner";
 import { Skeleton } from "../ui/skeleton";
 import { cn } from "@/lib/cn";
-import { uploadDocument } from "@/lib/api-client";
-import type { DocumentResponse, DocumentSummary } from "@/lib/types";
+import type { DocumentSummary } from "@/lib/types";
+
+// Replicates the primary-button visual so we can render an anchor (Link)
+// without nesting an interactive element inside a <button> (invalid HTML).
+const PRIMARY_LINK_CLASS = cn(
+  "inline-flex items-center gap-1.5",
+  "h-7 px-2.5 rounded-md border",
+  "text-[12.5px] font-medium",
+  "bg-accent text-white",
+  "border-[color-mix(in_oklab,var(--color-accent)_70%,black)]",
+  "shadow-[0_1px_0_rgba(0,0,0,0.08),inset_0_1px_0_rgba(255,255,255,0.15)]",
+  "hover:bg-[color-mix(in_oklab,var(--color-accent)_88%,black)]",
+  "hover:border-[color-mix(in_oklab,var(--color-accent)_60%,black)]",
+  "transition-[background-color,border-color,color] duration-100"
+);
 
 interface DocumentListProps {
   documents: DocumentSummary[];
   loading: boolean;
-  /** Fetch error for the documents list (not upload errors). */
+  /** Fetch error for the documents list. */
   error: string | null;
-  /** Persistent upload error displayed above the list. */
-  uploadError?: string | null;
-  onDismissUploadError?: () => void;
-  onUploadStart: (fileName: string) => void;
-  onUploadComplete: (doc: DocumentResponse) => void;
-  onUploadError: (message: string) => void;
 }
 
 /** Formats an ISO timestamp as a human-readable relative time (e.g. "3h ago"). */
@@ -164,7 +171,7 @@ function DocumentRow({
   );
 }
 
-function EmptyState({ onUploadClick }: { onUploadClick: () => void }) {
+function EmptyState() {
   return (
     <div className="flex flex-col items-center justify-center gap-4 py-20 px-6 text-center">
       <div
@@ -179,12 +186,12 @@ function EmptyState({ onUploadClick }: { onUploadClick: () => void }) {
         No documents yet
       </h2>
       <p className="m-0 max-w-[300px] text-ink-3 text-[13px] leading-[1.55]">
-        Drop a file anywhere on this page, or upload one to start parsing.
+        Head to the parse page to upload your first document.
       </p>
-      <Button variant="primary" onClick={onUploadClick}>
+      <Link href="/" className={PRIMARY_LINK_CLASS}>
         <Upload size={14} />
         Upload your first document
-      </Button>
+      </Link>
     </div>
   );
 }
@@ -221,70 +228,14 @@ function LoadingSkeleton() {
 }
 
 /**
- * Documents history list with drag-and-drop upload. Renders a loading skeleton,
- * an empty state, or a table of prior documents depending on state. Upload events
- * propagate to the parent so it can show the parsing overlay and handle navigation.
+ * Documents history list. Pure browse view — uploads happen on `/`, with the
+ * "Upload new" header button + empty-state CTA both linking to that route.
  */
-export function DocumentList({
-  documents,
-  loading,
-  error,
-  uploadError,
-  onDismissUploadError,
-  onUploadStart,
-  onUploadComplete,
-  onUploadError,
-}: DocumentListProps) {
+export function DocumentList({ documents, loading, error }: DocumentListProps) {
   const router = useRouter();
-  const inputRef = React.useRef<HTMLInputElement>(null);
-  const [isDragging, setIsDragging] = React.useState(false);
-
-  const handleFile = React.useCallback(
-    async (file: File) => {
-      onUploadStart(file.name);
-      try {
-        const doc = await uploadDocument(file);
-        onUploadComplete(doc);
-      } catch (err) {
-        onUploadError(err instanceof Error ? err.message : "Upload failed");
-      }
-    },
-    [onUploadStart, onUploadComplete, onUploadError]
-  );
-
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) void handleFile(file);
-    if (inputRef.current) inputRef.current.value = "";
-  };
-
-  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    setIsDragging(true);
-  };
-
-  const handleDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
-    // Only clear dragging when the pointer genuinely leaves this container
-    // (not when it moves over a child element, which also fires DragLeave).
-    if (!e.currentTarget.contains(e.relatedTarget as Node)) {
-      setIsDragging(false);
-    }
-  };
-
-  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    setIsDragging(false);
-    const file = e.dataTransfer.files?.[0];
-    if (file) void handleFile(file);
-  };
 
   return (
-    <div
-      onDragOver={handleDragOver}
-      onDragLeave={handleDragLeave}
-      onDrop={handleDrop}
-      className="relative flex flex-1 flex-col min-h-0 bg-bg"
-    >
+    <div className="flex flex-1 flex-col min-h-0 bg-bg">
       <header
         className={cn(
           "flex items-center gap-3 shrink-0",
@@ -294,29 +245,13 @@ export function DocumentList({
         <h1 className="flex-1 m-0 text-[15px] font-semibold text-ink tracking-[-0.01em]">
           Documents
         </h1>
-        <Button variant="primary" onClick={() => inputRef.current?.click()}>
+        <Link href="/" className={PRIMARY_LINK_CLASS}>
           <Upload size={13} />
           Upload new
-        </Button>
-        <input
-          ref={inputRef}
-          type="file"
-          accept=".pdf,.png,.jpg,.jpeg,.tif,.tiff"
-          className="hidden"
-          onChange={handleInputChange}
-          aria-label="Upload document"
-        />
+        </Link>
       </header>
 
       <div className="flex-1 overflow-y-auto py-5 px-6">
-        {uploadError && (
-          <ErrorBanner
-            title="Upload failed"
-            message={uploadError}
-            onDismiss={onDismissUploadError}
-            className="mb-4"
-          />
-        )}
         {error && (
           <ErrorBanner
             title="Couldn't load documents"
@@ -328,7 +263,7 @@ export function DocumentList({
         {loading ? (
           <LoadingSkeleton />
         ) : documents.length === 0 ? (
-          <EmptyState onUploadClick={() => inputRef.current?.click()} />
+          <EmptyState />
         ) : (
           <div className={CARD_WRAPPER}>
             <table className="w-full border-collapse">
@@ -354,28 +289,6 @@ export function DocumentList({
           </div>
         )}
       </div>
-
-      {isDragging && (
-        <div
-          aria-hidden="true"
-          className={cn(
-            "absolute inset-0 z-10 grid place-items-center pointer-events-none",
-            "bg-accent-weak border-2 border-dashed border-accent"
-          )}
-        >
-          <div
-            className={cn(
-              "flex flex-col items-center gap-2.5",
-              "py-6 px-9 rounded-lg",
-              "bg-surface shadow-md",
-              "text-accent-ink text-[15px] font-semibold"
-            )}
-          >
-            <Upload size={24} />
-            <span>Drop to upload</span>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

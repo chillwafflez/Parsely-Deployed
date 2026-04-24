@@ -68,8 +68,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   // `setActiveDocument` from useState is already referentially stable per React's
   // guarantees, so it can be threaded into the context directly.
   const contextValue = React.useMemo(
-    () => ({ showToast, refreshTemplates, setActiveDocument }),
-    [showToast, refreshTemplates]
+    () => ({
+      showToast,
+      refreshTemplates,
+      setActiveDocument,
+      templates,
+      templatesLoading,
+    }),
+    [showToast, refreshTemplates, templates, templatesLoading]
   );
 
   return (

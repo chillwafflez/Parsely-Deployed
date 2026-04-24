@@ -7,6 +7,7 @@ import type {
   FieldUpdate,
   SpeechToken,
   Template,
+  TemplateApplyMode,
   TemplateSummary,
   UpdateTemplateRequest,
   VoiceFillRequest,
@@ -16,9 +17,25 @@ import type {
 const API_BASE =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:5180";
 
-export async function uploadDocument(file: File): Promise<DocumentResponse> {
+export interface UploadOptions {
+  /** Defaults server-side to `"auto"` when omitted. */
+  templateMode?: TemplateApplyMode;
+  /** Required when `templateMode === "manual"`. */
+  templateId?: string;
+}
+
+export async function uploadDocument(
+  file: File,
+  options?: UploadOptions
+): Promise<DocumentResponse> {
   const formData = new FormData();
   formData.append("file", file);
+  if (options?.templateMode) {
+    formData.append("templateMode", options.templateMode);
+  }
+  if (options?.templateId) {
+    formData.append("templateId", options.templateId);
+  }
 
   const res = await fetch(`${API_BASE}/api/documents/upload`, {
     method: "POST",

@@ -23,7 +23,7 @@ export function ParsingOverlay({ fileName }: ParsingOverlayProps) {
           Parsing {fileName}
         </h3>
         <p className="m-0 mb-[18px] text-ink-3 text-[12.5px]">
-          Extracting fields with Azure Document Intelligence…
+          Extracting fields…
         </p>
         <ol className="list-none m-0 p-0 flex flex-col gap-2.5 text-[12.5px]">
           <Step label="OCR + text extraction" state="done" />

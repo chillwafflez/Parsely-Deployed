@@ -155,6 +155,14 @@ export interface TemplateFieldRule {
 export type TemplateApplyTo = "vendor" | "similar" | "all";
 
 /**
+ * Controls how templates are applied during upload.
+ * - `auto`: match by VendorName → VendorHint (current default behavior).
+ * - `manual`: apply the template specified by `templateId` unconditionally.
+ * - `none`: skip template logic entirely.
+ */
+export type TemplateApplyMode = "auto" | "manual" | "none";
+
+/**
  * Optional voice-fill metadata captured per rule at template-save time.
  * Keyed by the rule's field name (case-insensitive on the server).
  */

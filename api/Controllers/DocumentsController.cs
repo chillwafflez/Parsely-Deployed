@@ -65,10 +65,35 @@ public class DocumentsController(
     public async Task<ActionResult<DocumentResponse>> Upload(
         IFormFile file,
         [FromQuery] string? modelId,
+        [FromForm] string? templateMode,
+        [FromForm] Guid? templateId,
         CancellationToken ct)
     {
         if (file is null || file.Length == 0)
             return BadRequest(new { error = "No file provided." });
+
+        // Validate the template-mode contract before doing expensive work
+        // (file save, Azure DI call). Fail-fast keeps bad requests cheap.
+        var mode = TemplateApplyMode.Auto;
+        if (!string.IsNullOrWhiteSpace(templateMode)
+            && !Enum.TryParse(templateMode, ignoreCase: true, out mode))
+        {
+            return BadRequest(new { error = "Invalid templateMode. Use: auto, manual, none." });
+        }
+
+        Template? manualTemplate = null;
+        if (mode == TemplateApplyMode.Manual)
+        {
+            if (templateId is null)
+                return BadRequest(new { error = "templateId is required when templateMode=manual." });
+
+            manualTemplate = await db.Templates
+                .Include(t => t.Rules)
+                .FirstOrDefaultAsync(t => t.Id == templateId, ct);
+
+            if (manualTemplate is null)
+                return NotFound(new { error = "Template not found." });
+        }
 
         var uploadsDir = Path.Combine(env.ContentRootPath, "uploads");
         Directory.CreateDirectory(uploadsDir);
@@ -115,7 +140,21 @@ public class DocumentsController(
             document.Status = DocumentStatus.Completed;
             document.CompletedAt = DateTime.UtcNow;
 
-            await TryMatchTemplateAsync(document, extraction.Pages, ct);
+            switch (mode)
+            {
+                case TemplateApplyMode.Auto:
+                    await TryMatchTemplateAsync(document, extraction.Pages, ct);
+                    break;
+
+                case TemplateApplyMode.Manual when manualTemplate is not null:
+                    document.Template = manualTemplate;
+                    ApplyTemplateRules(document, manualTemplate, extraction.Pages);
+                    break;
+
+                case TemplateApplyMode.None:
+                    // User opted out — skip all template logic.
+                    break;
+            }
         }
         catch (Exception ex)
         {
