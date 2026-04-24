@@ -203,6 +203,31 @@ export interface UpdateTemplateRuleRequest {
   aliases: string[];
 }
 
+/**
+ * Portable, server-generated shape produced by `GET /api/templates/:id/export`
+ * and accepted by `POST /api/templates/import`. Intentionally omits all
+ * server-generated ids and any source-document reference so the payload is
+ * safe to share between users and databases.
+ */
+export interface TemplateExportPayload {
+  version: number;
+  name: string;
+  kind: string;
+  description: string | null;
+  applyTo: TemplateApplyTo;
+  vendorHint: string | null;
+  rules: TemplateExportRule[];
+}
+
+export interface TemplateExportRule {
+  name: string;
+  dataType: string;
+  isRequired: boolean;
+  hint: string | null;
+  aliases: string[];
+  boundingRegions: BoundingRegion[];
+}
+
 /** Response of GET /api/voice/token — short-lived JWT for the browser Speech SDK. */
 export interface SpeechToken {
   token: string;

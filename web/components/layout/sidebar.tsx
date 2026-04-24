@@ -24,7 +24,6 @@ interface SidebarProps {
   activeTemplateId: string | null;
   onPickTemplate: (id: string) => void;
   templatesLoading: boolean;
-  parseCount: number;
   documentsCount?: number;
   queueCount: number;
 }
@@ -62,7 +61,6 @@ export function Sidebar({
   activeTemplateId,
   onPickTemplate,
   templatesLoading,
-  parseCount,
   documentsCount,
   queueCount,
 }: SidebarProps) {
@@ -97,7 +95,6 @@ export function Sidebar({
           href="/"
           icon={<Upload size={17} />}
           label="Parse"
-          count={parseCount}
           active={pathname === "/"}
         />
         <NavLink

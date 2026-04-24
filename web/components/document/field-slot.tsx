@@ -10,6 +10,8 @@ interface FieldSlotProps {
   /** Placeholder text shown when empty (usually the rule's field name). */
   label: string;
   value: string;
+  /** Drives the " · Required" suffix on the hover tag. */
+  required: boolean;
   /**
    * When true, plays a one-shot flash animation on the committed slot.
    * TemplateFillStage sets this for ~600ms after a voice-fill commits so
@@ -25,11 +27,17 @@ interface FieldSlotProps {
  * Absolutely-positioned form-field slot rendered over the source PDF.
  * Click → inline input, Enter commits, Esc reverts. The slot's outer div
  * is positioned by the parent overlay; internal styling fills that area.
+ *
+ * Empty slots render fully opaque so the masked PDF text underneath doesn't
+ * bleed through — this keeps the form aesthetic closer to a real PDF form
+ * and avoids the "which is the label and which is the underlying text?"
+ * confusion users were hitting pre-2026-04-23.
  */
 export function FieldSlot({
   id,
   label,
   value,
+  required,
   flashing = false,
   selected,
   onSelect,
@@ -40,8 +48,10 @@ export function FieldSlot({
 
   const isFilled = value.trim().length > 0;
 
+  // `group` enables the hover tag below to reveal on cursor-over-slot without
+  // a render pass (pure CSS). Kept in the base class so every state inherits.
   const baseClass = cn(
-    "absolute inset-0 flex items-center",
+    "group absolute inset-0 flex items-center",
     "px-1.5 rounded-[3px] cursor-text text-[11px]",
     "transition-colors duration-100"
   );
@@ -55,7 +65,7 @@ export function FieldSlot({
           selected && "shadow-[0_0_0_2px_var(--color-accent)]"
         )
       : cn(
-          "bg-surface-2/90 border border-dashed border-line-strong text-ink-4",
+          "bg-surface-2 border border-dashed border-line-strong text-ink-4",
           "hover:bg-surface hover:border-accent-border",
           selected && "shadow-[0_0_0_2px_var(--color-accent)]"
         );
@@ -88,8 +98,44 @@ export function FieldSlot({
           spellCheck={false}
         />
       ) : (
-        <span className="truncate w-full">{isFilled ? value : label}</span>
+        <>
+          <span className="truncate w-full">{isFilled ? value : label}</span>
+          <HoverTag name={label} required={required} selected={selected} />
+        </>
       )}
     </div>
+  );
+}
+
+/**
+ * Small pill shown above the slot on hover or when selected. Mirrors the
+ * parsed-document bounding-box tag (mono, 10px, notched bottom-left corner)
+ * so users can reliably see the canonical field name before dictating it via
+ * voice fill. `pointer-events-none` so the tag itself never steals a click
+ * from the slot beneath it.
+ */
+function HoverTag({
+  name,
+  required,
+  selected,
+}: {
+  name: string;
+  required: boolean;
+  selected: boolean;
+}) {
+  return (
+    <span
+      aria-hidden="true"
+      className={cn(
+        "absolute -top-5 left-0 pointer-events-none",
+        "font-mono text-[10px] py-px px-1.5 whitespace-nowrap",
+        "bg-accent text-white rounded-[3px_3px_3px_0]",
+        "opacity-0 group-hover:opacity-100 transition-opacity duration-100",
+        selected && "opacity-100"
+      )}
+    >
+      {name}
+      {required && " · Required"}
+    </span>
   );
 }

@@ -1,3 +1,4 @@
+using System.Text.Json;
 using DocParsing.Api.Contracts;
 using DocParsing.Api.Data;
 using DocParsing.Api.Models;
@@ -260,6 +261,95 @@ public class TemplatesController(AppDbContext db, ILogger<TemplatesController> l
         return NoContent();
     }
 
+    [HttpGet("{id:guid}/export")]
+    public async Task<IActionResult> Export(Guid id, CancellationToken ct)
+    {
+        var template = await db.Templates
+            .Include(t => t.Rules)
+            .AsNoTracking()
+            .FirstOrDefaultAsync(t => t.Id == id, ct);
+
+        if (template is null) return NotFound();
+
+        var payload = new TemplateExportPayload(
+            Version: ExportSchemaVersion,
+            Name: template.Name,
+            Kind: template.Kind,
+            Description: template.Description,
+            ApplyTo: template.ApplyTo,
+            VendorHint: template.VendorHint,
+            Rules: template.Rules
+                .OrderBy(r => r.Name)
+                .Select(r => new TemplateExportRule(
+                    Name: r.Name,
+                    DataType: r.DataType,
+                    IsRequired: r.IsRequired,
+                    Hint: r.Hint,
+                    Aliases: r.GetAliases(),
+                    BoundingRegions: DeserializeRegions(r.BoundingRegionsJson)))
+                .ToList());
+
+        var bytes = JsonSerializer.SerializeToUtf8Bytes(payload, ExportJsonOptions);
+        var filename = $"{SanitizeFilename(template.Name)}.parsely.json";
+
+        return File(bytes, "application/json", filename);
+    }
+
+    [HttpPost("import")]
+    public async Task<ActionResult<TemplateResponse>> Import(
+        [FromBody] ImportTemplateRequest request,
+        CancellationToken ct)
+    {
+        if (!ModelState.IsValid) return ValidationProblem(ModelState);
+
+        var name = await ResolveImportedNameAsync(request.Name.Trim(), ct);
+
+        var template = new Template
+        {
+            Id = Guid.NewGuid(),
+            Name = name,
+            Kind = request.Kind.Trim(),
+            Description = string.IsNullOrWhiteSpace(request.Description) ? null : request.Description.Trim(),
+            ApplyTo = request.ApplyTo.Trim(),
+            VendorHint = string.IsNullOrWhiteSpace(request.VendorHint) ? null : request.VendorHint.Trim(),
+            // Imported templates have no source document — `/templates/:id/edit`
+            // and `/templates/:id/new` already render a friendly fallback when
+            // this is null, so no other backend plumbing is needed.
+            SourceDocumentId = null,
+            CreatedAt = DateTime.UtcNow,
+            Rules = request.Rules
+                .Select(r =>
+                {
+                    var rule = new TemplateFieldRule
+                    {
+                        Id = Guid.NewGuid(),
+                        Name = r.Name.Trim(),
+                        DataType = r.DataType.Trim(),
+                        IsRequired = r.IsRequired,
+                        Hint = string.IsNullOrWhiteSpace(r.Hint) ? null : r.Hint.Trim(),
+                        BoundingRegionsJson = (r.BoundingRegions is { Count: > 0 } regions)
+                            ? JsonSerializer.Serialize(regions)
+                            : null,
+                    };
+                    rule.SetAliases(r.Aliases ?? Array.Empty<string>());
+                    return rule;
+                })
+                .ToList(),
+        };
+
+        db.Templates.Add(template);
+        await db.SaveChangesAsync(ct);
+
+        logger.LogInformation(
+            "Imported template {TemplateId} ({Name}) with {RuleCount} rules",
+            template.Id, template.Name, template.Rules.Count);
+
+        return CreatedAtAction(
+            actionName: nameof(Get),
+            routeValues: new { id = template.Id },
+            value: TemplateResponse.FromEntity(template, runs: 0));
+    }
+
     /// <summary>
     /// Picks a non-colliding "(copy)" / "(copy 2)" / "(copy 3)" name for a
     /// duplicated template. Matches Finder/Explorer behavior — the user never
@@ -275,5 +365,52 @@ public class TemplatesController(AppDbContext db, ILogger<TemplatesController> l
             candidate = $"{baseName} (copy {n})";
             if (!await db.Templates.AnyAsync(t => t.Name == candidate, ct)) return candidate;
         }
+    }
+
+    /// <summary>
+    /// Picks a non-colliding name for an imported template. Uses the incoming
+    /// name as-is when it's unique, then falls back to "(imported)" and
+    /// "(imported N)" — distinct from the duplicate suffix so the provenance
+    /// stays readable in the sidebar.
+    /// </summary>
+    private async Task<string> ResolveImportedNameAsync(string baseName, CancellationToken ct)
+    {
+        if (!await db.Templates.AnyAsync(t => t.Name == baseName, ct)) return baseName;
+
+        var candidate = $"{baseName} (imported)";
+        if (!await db.Templates.AnyAsync(t => t.Name == candidate, ct)) return candidate;
+
+        for (var n = 2; ; n++)
+        {
+            candidate = $"{baseName} (imported {n})";
+            if (!await db.Templates.AnyAsync(t => t.Name == candidate, ct)) return candidate;
+        }
+    }
+
+    private const int ExportSchemaVersion = 1;
+
+    private static readonly JsonSerializerOptions ExportJsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        WriteIndented = true,
+    };
+
+    private static IReadOnlyList<BoundingRegionResponse> DeserializeRegions(string? json) =>
+        string.IsNullOrWhiteSpace(json)
+            ? Array.Empty<BoundingRegionResponse>()
+            : JsonSerializer.Deserialize<List<BoundingRegionResponse>>(json)
+              ?? new List<BoundingRegionResponse>();
+
+    /// <summary>
+    /// Downloads need a filesystem-safe name — strip anything that isn't
+    /// alphanumeric / dash / underscore, fall back to "template" if the
+    /// sanitized result is empty.
+    /// </summary>
+    private static string SanitizeFilename(string name)
+    {
+        var cleaned = System.Text.RegularExpressions.Regex
+            .Replace(name, "[^a-zA-Z0-9-_]+", "-")
+            .Trim('-');
+        return string.IsNullOrEmpty(cleaned) ? "template" : cleaned;
     }
 }

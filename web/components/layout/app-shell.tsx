@@ -91,7 +91,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             activeTemplateId={activeDocument?.templateId ?? null}
             onPickTemplate={handlePickTemplate}
             templatesLoading={templatesLoading}
-            parseCount={activeDocument ? 1 : 0}
             queueCount={0}
           />
           <main className="flex min-h-0 bg-bg">{children}</main>

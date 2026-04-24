@@ -31,6 +31,7 @@ web/next-env.d.ts
 # Test samples
 samples/
 Document Parsing Service Prototype-handoff
+parsley-upload-page
 
 # OS
 Thumbs.db

@@ -2,10 +2,10 @@
 
 import * as React from "react";
 import { createPortal } from "react-dom";
-import { Copy, MoreHorizontal, Pencil, Trash2 } from "lucide-react";
+import { Copy, Download, MoreHorizontal, Pencil, Trash2 } from "lucide-react";
 import { cn } from "@/lib/cn";
 
-export type RowAction = "edit" | "duplicate" | "delete";
+export type RowAction = "edit" | "duplicate" | "export" | "delete";
 
 interface TemplateRowActionsProps {
   templateName: string;
@@ -133,6 +133,11 @@ function Menu({ anchorRect, onSelect, onClose }: MenuProps) {
         icon={<Copy size={13} aria-hidden="true" />}
         label="Duplicate"
         onClick={() => onSelect("duplicate")}
+      />
+      <MenuItem
+        icon={<Download size={13} aria-hidden="true" />}
+        label="Export"
+        onClick={() => onSelect("export")}
       />
       <div className="my-1 border-t border-line" />
       <MenuItem

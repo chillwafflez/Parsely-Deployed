@@ -2,11 +2,19 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { LayoutTemplate } from "lucide-react";
+import { Upload } from "lucide-react";
 import { cn } from "@/lib/cn";
-import { duplicateTemplate, deleteTemplate } from "@/lib/api-client";
+import {
+  deleteTemplate,
+  duplicateTemplate,
+  importTemplate,
+} from "@/lib/api-client";
 import { useAppShell } from "@/lib/app-shell-context";
 import { useTemplates } from "@/lib/hooks/use-templates";
+import {
+  downloadTemplateExport,
+  readTemplateExportFile,
+} from "@/lib/exporters/template-exporter";
 import { ErrorBanner } from "@/components/ui/error-banner";
 import { DeleteTemplateModal } from "@/components/modal/delete-template-modal";
 import { TemplatesTable } from "@/components/templates/templates-table";
@@ -15,12 +23,14 @@ import {
   TemplatesErrorPanel,
   TemplatesLoadingSkeleton,
 } from "@/components/templates/templates-placeholder";
+import type { RowAction } from "@/components/templates/template-row-actions";
 import type { TemplateSummary } from "@/lib/types";
 
 /**
  * Templates management route (`/templates`). Lists every saved template with
- * Edit / Duplicate / Delete affordances. Row click opens the fill flow, the
- * kebab menu exposes the management actions without hijacking the row.
+ * Edit / Duplicate / Export / Delete affordances + an Import button in the
+ * header. Row click opens the fill flow; the kebab menu exposes the
+ * management actions without hijacking the row.
  */
 export default function TemplatesPage() {
   const router = useRouter();
@@ -29,6 +39,9 @@ export default function TemplatesPage() {
 
   const [pendingDelete, setPendingDelete] = React.useState<TemplateSummary | null>(null);
   const [duplicatingId, setDuplicatingId] = React.useState<string | null>(null);
+  const [exportingId, setExportingId] = React.useState<string | null>(null);
+  const [importing, setImporting] = React.useState(false);
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
 
   // Nothing on this page belongs to a specific document; clear the shell's
   // active-document highlight so the topbar breadcrumb and sidebar state
@@ -38,7 +51,7 @@ export default function TemplatesPage() {
   }, [setActiveDocument]);
 
   const handleRowAction = React.useCallback(
-    async (action: "edit" | "duplicate" | "delete", template: TemplateSummary) => {
+    async (action: RowAction, template: TemplateSummary) => {
       if (action === "edit") {
         router.push(`/templates/${template.id}/edit`);
         return;
@@ -46,6 +59,23 @@ export default function TemplatesPage() {
 
       if (action === "delete") {
         setPendingDelete(template);
+        return;
+      }
+
+      if (action === "export") {
+        if (exportingId) return;
+        setExportingId(template.id);
+        try {
+          await downloadTemplateExport(template.id);
+          showToast(`Exported · ${template.name}`);
+        } catch (err) {
+          showToast(
+            err instanceof Error ? err.message : "Failed to export template",
+            "err"
+          );
+        } finally {
+          setExportingId(null);
+        }
         return;
       }
 
@@ -69,7 +99,41 @@ export default function TemplatesPage() {
         setDuplicatingId(null);
       }
     },
-    [duplicatingId, refresh, refreshTemplates, router, showToast]
+    [duplicatingId, exportingId, refresh, refreshTemplates, router, showToast]
+  );
+
+  const handleImportClick = React.useCallback(() => {
+    if (importing) return;
+    fileInputRef.current?.click();
+  }, [importing]);
+
+  const handleImportFile = React.useCallback(
+    async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      // Reset the input value immediately so picking the same file twice in
+      // a row still fires the change handler.
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      if (!file) return;
+
+      setImporting(true);
+      try {
+        const payload = await readTemplateExportFile(file);
+        const imported = await importTemplate(payload);
+        await Promise.all([refreshTemplates(), refresh()]);
+        showToast(`Imported · ${imported.name}`);
+        // Land on the edit page — imported templates typically need a quick
+        // review (hints, aliases, vendor hint) before they're used.
+        router.push(`/templates/${imported.id}/edit`);
+      } catch (err) {
+        showToast(
+          err instanceof Error ? err.message : "Failed to import template",
+          "err"
+        );
+      } finally {
+        setImporting(false);
+      }
+    },
+    [refresh, refreshTemplates, router, showToast]
   );
 
   const handleConfirmDelete = React.useCallback(async () => {
@@ -113,19 +177,29 @@ export default function TemplatesPage() {
         <div className="ml-auto">
           <button
             type="button"
-            disabled
-            title="Save one from the review screen after a parse"
+            onClick={handleImportClick}
+            disabled={importing}
+            title="Import a template exported from another Parsely instance"
             className={cn(
               "inline-flex items-center gap-1.5",
               "h-7 px-2.5 rounded-md border",
-              "text-[12.5px] font-medium",
-              "bg-surface text-ink-3 border-line",
+              "text-[12.5px] font-medium cursor-pointer",
+              "bg-surface text-ink-2 border-line",
+              "hover:enabled:bg-surface-2 hover:enabled:border-line-strong hover:enabled:text-ink",
+              "transition-[background-color,border-color,color] duration-100",
               "disabled:opacity-[0.55] disabled:cursor-not-allowed"
             )}
           >
-            <LayoutTemplate size={13} aria-hidden="true" />
-            New template
+            <Upload size={13} aria-hidden="true" />
+            {importing ? "Importing…" : "Import template"}
           </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".json,application/json"
+            className="hidden"
+            onChange={handleImportFile}
+          />
         </div>
       </header>
 

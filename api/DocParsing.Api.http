@@ -42,6 +42,37 @@ Content-Type: application/json
 ### appends " (copy)" to the name, resolves collisions).
 POST {{base}}/api/templates/REPLACE_WITH_TEMPLATE_GUID/duplicate
 
+### Export a template as a shareable JSON file. Response has
+### Content-Disposition: attachment; filename="<name>.parsely.json" so the
+### browser triggers a download.
+GET {{base}}/api/templates/REPLACE_WITH_TEMPLATE_GUID/export
+
+### Import a template from a prior export. Generates fresh ids, sets
+### sourceDocumentId=null, and resolves name collisions with " (imported)".
+POST {{base}}/api/templates/import
+Content-Type: application/json
+
+{
+  "version": 1,
+  "name": "Acme Invoice",
+  "kind": "Invoice",
+  "description": null,
+  "applyTo": "similar",
+  "vendorHint": "Acme Corp",
+  "rules": [
+    {
+      "name": "InvoiceTotal",
+      "dataType": "currency",
+      "isRequired": true,
+      "hint": "Grand total at the bottom of the page",
+      "aliases": ["total", "grand total"],
+      "boundingRegions": [
+        { "pageNumber": 1, "polygon": [6.1, 9.3, 7.2, 9.3, 7.2, 9.55, 6.1, 9.55] }
+      ]
+    }
+  ]
+}
+
 
 ### ----- Voice: mint a short-lived Azure Speech JWT for the browser -----
 # Requires Speech:Key + Speech:Region via dotnet user-secrets.

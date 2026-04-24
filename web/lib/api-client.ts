@@ -8,6 +8,7 @@ import type {
   SpeechToken,
   Template,
   TemplateApplyMode,
+  TemplateExportPayload,
   TemplateSummary,
   UpdateTemplateRequest,
   VoiceFillRequest,
@@ -187,6 +188,58 @@ export async function duplicateTemplate(id: string): Promise<Template> {
   }
 
   return res.json();
+}
+
+/**
+ * Downloads the export file for a template. Returns the raw Blob plus the
+ * filename the server suggested via Content-Disposition so the caller can
+ * trigger the browser download without guessing at naming.
+ */
+export async function exportTemplate(
+  id: string
+): Promise<{ blob: Blob; filename: string }> {
+  const res = await fetch(`${API_BASE}/api/templates/${id}/export`, {
+    cache: "no-store",
+  });
+
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`Export template failed (${res.status}): ${body || res.statusText}`);
+  }
+
+  const filename = parseContentDispositionFilename(
+    res.headers.get("content-disposition")
+  );
+  return { blob: await res.blob(), filename };
+}
+
+export async function importTemplate(
+  payload: TemplateExportPayload
+): Promise<Template> {
+  const res = await fetch(`${API_BASE}/api/templates/import`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`Import template failed (${res.status}): ${body || res.statusText}`);
+  }
+
+  return res.json();
+}
+
+/**
+ * Plucks the suggested filename out of a Content-Disposition header. We only
+ * need the common `attachment; filename="foo.json"` case — the RFC 6266
+ * `filename*=UTF-8''…` variant isn't emitted by our server, so a simple match
+ * is enough. Falls back to a generic name if the header is missing/malformed.
+ */
+function parseContentDispositionFilename(header: string | null): string {
+  if (!header) return "template.parsely.json";
+  const match = /filename\s*=\s*"?([^";]+)"?/i.exec(header);
+  return match?.[1]?.trim() || "template.parsely.json";
 }
 
 export async function fetchSpeechToken(): Promise<SpeechToken> {

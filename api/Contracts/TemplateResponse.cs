@@ -108,3 +108,48 @@ public record UpdateTemplateRuleRequest(
     bool IsRequired,
     [StringLength(200)] string? Hint,
     IReadOnlyList<string>? Aliases);
+
+/// <summary>
+/// Portable on-disk shape produced by <c>GET /api/templates/:id/export</c> and
+/// consumed verbatim by <c>POST /api/templates/import</c>. Intentionally omits
+/// all server-generated ids and any reference to the source document so the
+/// file is safe to share across users and databases.
+/// </summary>
+public record TemplateExportPayload(
+    int Version,
+    string Name,
+    string Kind,
+    string? Description,
+    string ApplyTo,
+    string? VendorHint,
+    IReadOnlyList<TemplateExportRule> Rules);
+
+public record TemplateExportRule(
+    string Name,
+    string DataType,
+    bool IsRequired,
+    string? Hint,
+    IReadOnlyList<string> Aliases,
+    IReadOnlyList<BoundingRegionResponse> BoundingRegions);
+
+/// <summary>
+/// Import body — mirrors <see cref="TemplateExportPayload"/> field-for-field
+/// with validation attributes so malformed or future-versioned files surface
+/// a clean 400 instead of a half-populated row.
+/// </summary>
+public record ImportTemplateRequest(
+    [Required, Range(1, 1)] int Version,
+    [Required, StringLength(256, MinimumLength = 1)] string Name,
+    [Required, StringLength(64, MinimumLength = 1)] string Kind,
+    [StringLength(2048)] string? Description,
+    [Required, RegularExpression("^(vendor|similar|all)$")] string ApplyTo,
+    [StringLength(512)] string? VendorHint,
+    [Required] IReadOnlyList<ImportTemplateRuleRequest> Rules);
+
+public record ImportTemplateRuleRequest(
+    [Required, StringLength(256, MinimumLength = 1)] string Name,
+    [Required, StringLength(64, MinimumLength = 1)] string DataType,
+    bool IsRequired,
+    [StringLength(200)] string? Hint,
+    IReadOnlyList<string>? Aliases,
+    IReadOnlyList<BoundingRegionResponse>? BoundingRegions);
