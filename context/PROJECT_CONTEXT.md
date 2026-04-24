@@ -830,4 +830,107 @@ The UI draws 1:1 from the Claude Design mock exported to `Document Parsing Servi
 
 ---
 
-_Last updated: 2026-04-23 end-of-session (Day 13). Days 1–13 feature work complete. Day 12 (Templates management surface) was committed earlier; Day 13 Part A (CSV/JSON field export) committed mid-session; Day 13 Parts B (Turbopack), C (upload-time template control: Auto / Pick / None), and D (`/documents` drag-drop removed) ALL UNCOMMITTED. Day 9 Tailwind migration still PARTIAL — `document/bounding-box-overlay`, `inspector/{inspector,inspector-field}`, and `app/page.module.css` remain on CSS Modules. Voice-Fill feature shipped (Phases 1–4, see `context/VOICE_FEATURE.md`). PDF export hardened (CropBox-origin math + local-background-color sampling + ghost-opacity drop for an Acrobat/Sejda-style form-fill UX). Demo date ~2026-05-29. Excel field export deliberately deferred — use ExcelJS (MIT) if added later, NOT SheetJS (SSPL since v0.18.5). Next up: commit Day 13 work, wipe `web/.next` once before restart, end-to-end test the new template-mode flow, decide `LastUsedAt` question, "Edit template" button on fill stage, seed demo docs._
+## 13. Deployment plan & progress (started 2026-04-24)
+
+Deploy-readiness work tracked separately from feature development. Goal: get the app running in Azure + Vercel for the 2026-05-29 demo. Research backed by context7 (Azure docs + Next.js docs + Harness docs) on 2026-04-24.
+
+### 13.1. Architecture decisions — locked in 2026-04-24
+
+| Concern | Choice | Rationale |
+|---|---|---|
+| Backend hosting | **Azure Container Apps** (consumption plan, min-replicas=0) | .NET 10 not yet a built-in stack on App Service Linux; containerizing sidesteps runtime lag. Scale-to-zero = near-free when idle. Microsoft-ecosystem. |
+| Frontend hosting | **Vercel** | Vercel maintains Next.js — all App Router features (Server Actions, ISR, PPR, streaming) land zero-config. Netlify adapter lags on Next 15; Azure Static Web Apps Next adapter is partial. |
+| Database | **Azure SQL Database** — General Purpose Serverless, Gen5, 1 vCore, 60-min auto-pause | Cheapest non-Free tier that auto-pauses between demo sessions. EF Core provider swap is one line. Basic ($5/mo flat) rejected — serverless wins on prototype usage pattern. Postgres rejected — Npgsql EF Core 10 version matrix unverified. |
+| File storage | **Azure Blob Storage** — StorageV2, Standard LRS | SQLite + local FS won't survive container restarts. Private container, API accesses via connection string. |
+| Container Registry | **Azure Container Registry** — Basic SKU | Container Apps can't build images; needs a registry to pull from. ACR has native ACA trust; avoids Docker Hub credential sprawl. |
+| CI/CD | **Harness pipelines** — one pipeline, CI stage (build+push) + CD stage (deploy) | Project is already on Harness Code. `BuildAndPushToACR` is a first-class step; ACA deploy via `Run` + `az containerapp update`; Vercel deploy via `Run` + deploy hook URL. |
+| Secrets | **Container Apps secrets** (not Key Vault yet) | Simpler than KV; adequate for prototype. Move to KV in Phase 2 if compliance requires. |
+| Region | **East US** | Co-located with existing `taia-ams-docai` + Speech resources. |
+
+### 13.2. Rejected options (don't re-litigate)
+
+- **Netlify / Azure Static Web Apps for frontend** — Next.js adapter lag / partial App Router support.
+- **Azure App Service built-in .NET stack** — .NET 10 rollout lag; would require self-contained publish or container anyway.
+- **Postgres** — Npgsql EF Core 10 compat unverified; SqlServer provider tracks EF Core in lockstep.
+- **Azure SQL Basic / Free tier** — flat-rate (no pause) / 32 GB cap + one-per-sub.
+- **Docker Hub for API image** — paid private repo + extra creds; ACR is native.
+- **SQLite on a mounted volume** — ephemeral FS in ACA + single-writer limitation = wrong answer.
+
+### 13.3. Provisioning approach
+
+**Portal for one-time initial setup, CLI (`az`) for ongoing ops.** User's explicit choice — portal surfaces pricing options + gives visual confirmation; CLI excels for repeatable Harness deploys.
+
+**Resource group**: user reuses the existing RG that contains `taia-ams-docai` + Speech service (East US). User **does not have permission** to create Resource Groups or Container Apps Environments in this subscription — policy-restricted. Look up the exact RG name via the portal.
+
+### 13.4. Azure provisioning status (as of 2026-04-24)
+
+| Resource | Name | Status | Notes |
+|---|---|---|---|
+| Azure Container Registry | `docparsingacr` | ✅ Created | Basic SKU, **admin credentials enabled**, **Tenant Reuse** DNL scope, **RBAC Registry Permissions** mode (no ABAC). Save login server + username + passwords for Harness secrets. |
+| Azure SQL Server | `docparsing-sql` | ✅ Created | SQL auth, admin user `sqladmin`. East US. |
+| Azure SQL Database | `docparsing-db` | ✅ Created | GP Serverless, Gen5, 1 vCore, 60-min auto-pause. Firewall: **Allow Azure services = Yes** + current client IP — both set post-creation via Security → Networking (wizard's Networking tab was read-only). |
+| Blob Storage Account | `docparsingstorage` | ✅ Created | Standard LRS, StorageV2, East US. |
+| Blob Container | `uploads` | ✅ Created | Private. Connection string copied. |
+| Container Apps Environment | (existing, shared) | ✅ Reused | Two envs already exist (created by lead); ask lead which one to target. User cannot create new ones. |
+| Container App | `docparsing-api` | ❌ Failed + deleted | First attempt with `mcr.microsoft.com/dotnet/samples:aspnetapp` placeholder image failed to deploy. Cause not diagnosed — deferred until real API image exists. **Don't retry with a placeholder** — build the real image first. |
+| Vercel project | — | ⏳ Pending | Connect repo, set `NEXT_PUBLIC_API_URL` to ACA app URL, grab deploy hook URL. |
+
+### 13.5. Portal gotchas encountered (2026-04-24)
+
+- **Azure SQL Networking tab is read-only during the creation wizard.** Firewall rules are server-level and locked until the server is fully provisioned. Skip that tab in the wizard → after creation, go to the **SQL server** (not the database) → **Security → Networking** → enable "Allow Azure services" + add client IP.
+- **No "Connectivity method: Public endpoint" option** — some subscriptions hide it via policy. Use **Selected networks** after creation.
+- **User cannot create new Resource Groups or Container Apps Environments.** Reuse existing; confirm with lead which ACA env to target.
+- **"Cannot access ACR because admin credentials are disabled"** — the ACR admin toggle must be explicitly enabled under **Settings → Access keys → Admin user = Enabled** before Container Apps can pull.
+- **Container App create with a placeholder image failed to deploy** — cause unknown. Next session: build + push the real image first, then create the Container App via CLI.
+
+### 13.6. Remaining work (prioritized for the next session)
+
+**Phase 1 — Code changes (single focused session):**
+
+1. **Add EF Core migrations** — `dotnet ef migrations add Initial`; wire `context.Database.Migrate()` in `Program.cs`. `EnsureCreated()` works fine for SQLite locally but blocks schema evolution on Azure SQL.
+2. **Swap `UseSqlite` → `UseSqlServer`** in `Program.cs` — add `Microsoft.EntityFrameworkCore.SqlServer` package. Schema uses only Id/string/DateTime/nullable FK — no SQLite-specific types, clean swap.
+3. **Swap local file save → Azure Blob SDK** — add `Azure.Storage.Blobs`; new `IBlobStorageService` wrapping `BlobContainerClient.UploadAsync` + `GetBlobClient(name).OpenReadAsync()`. Replace `FileStream` + `Path.Combine("uploads", ...)` calls in `DocumentsController`. Persist blob name in existing `Document.StoragePath` — no schema change.
+4. **Write API Dockerfile** — multi-stage (`sdk:10.0` build → `aspnet:10.0` runtime), expose 8080, `ENTRYPOINT ["dotnet", "DocParsing.Api.dll"]`. **Ship `.dockerignore`** to skip `bin/`, `obj/`, `app.db*`, `uploads/`, `.env*`, `appsettings.Development.json`.
+5. **CORS update** — whitelist Vercel prod domain + preview-deploy wildcard pattern. Don't use `*`.
+
+**Phase 2 — First deploy (plumbing):**
+
+6. **Bootstrap push to ACR locally:** `az acr login --name docparsingacr && docker build -t docparsingacr.azurecr.io/docparsing-api:bootstrap ./api && docker push docparsingacr.azurecr.io/docparsing-api:bootstrap`.
+7. **Create Container App via CLI** (not portal) with env vars + secrets: `ConnectionStrings__DefaultConnection`, `Azure__StorageConnection`, `DocumentIntelligence__Endpoint` (plain), `DocumentIntelligence__Key`, plus Voice/OpenAI/Speech secrets per `VOICE_FEATURE.md`.
+8. **End-to-end smoke test** — `curl` upload against the ACA URL, verify it hits Azure SQL + Blob.
+
+**Phase 3 — Frontend + pipeline:**
+
+9. **Create Vercel project** — import repo (mirror to GitHub if needed), set `NEXT_PUBLIC_API_URL`, grab deploy hook URL.
+10. **Harness pipeline YAML** — CI stage: `BuildAndPushToACR`. CD stage: `Run: az containerapp update --image ...` and `Run: curl -X POST $VERCEL_DEPLOY_HOOK`. Harness secrets: ACR creds, Azure service principal for `az`, Vercel deploy hook URL.
+11. **Smoke test from a clean push to `main`**.
+
+### 13.7. Anti-patterns to avoid during deployment
+
+- **Don't auto-commit deployment changes** — same rule as feature work.
+- **Don't put secrets in `appsettings.json` or any file checked into the repo.** ACA secrets + Harness secrets only.
+- **Don't use Docker Hub for the API image** — ACR is already provisioned.
+- **Don't retry Container App creation with a placeholder image** — it failed once; build the real image first.
+- **Don't upgrade Next.js major or react-pdf major just because Vercel supports newer** — stable on 15.x + react-pdf 9 + pdfjs-dist 4 (§7 gotchas still hold).
+- **Don't skip EF Core migrations.** `EnsureCreated()` against Azure SQL means no schema evolution without dropping the DB. Introduce migrations now even though it's prototype.
+- **Don't skip `.dockerignore`.** Without it `bin/`, `obj/`, `app.db`, `uploads/`, `.env*` bloat the image and leak secrets.
+- **Don't set CORS to `*`** — pin to Vercel prod + preview-deploy wildcard.
+- **Don't paste Azure connection strings, ACR passwords, DI keys, or any secret into chat, code files, or commits.** They live in the portal (for provisioning), ACA secrets (for runtime), and Harness secrets (for CI/CD) only.
+
+### 13.8. Cost estimate
+
+Rough monthly, idle-heavy prototype usage:
+
+- ACR Basic: ~$5
+- Azure SQL GP Serverless (mostly paused): <$5
+- Blob Storage LRS: <$1
+- Container Apps consumption (min-replicas=0, scaled down most of the time): <$5
+- Document Intelligence + Speech: pay-per-use, existing
+- Vercel: Free tier
+- Harness: existing org subscription
+
+**Total: ~$15–20/month** idle; spikes during active demo / pipeline runs.
+
+---
+
+_Last updated: 2026-04-24 (Day 14 — deployment planning session, in a separate Claude session from the most recent Day 13 feature work). Days 1–13 feature work complete and committed to `main` (last commit `7d0336e` "chore: have breadcrumb update based on page"). Section 13 appended this session captures the deployment architecture decisions, Azure provisioning status (ACR + SQL + Blob + ACA env done; Container App failed + deleted; Vercel pending), and the prioritized remaining work for the next session. Day 9 Tailwind migration still PARTIAL — `document/bounding-box-overlay`, `inspector/{inspector,inspector-field}`, and `app/page.module.css` remain on CSS Modules. Voice-Fill feature shipped (Phases 1–4, see `context/VOICE_FEATURE.md`). PDF export hardened (CropBox-origin math + local-background-color sampling + ghost-opacity drop for an Acrobat/Sejda-style form-fill UX). Demo date ~2026-05-29. Excel field export deliberately deferred — use ExcelJS (MIT) if added later, NOT SheetJS (SSPL since v0.18.5). Next up: commit Day 13 work, wipe `web/.next` once before restart, end-to-end test the new template-mode flow, decide `LastUsedAt` question, "Edit template" button on fill stage, seed demo docs._

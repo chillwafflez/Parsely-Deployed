@@ -35,7 +35,7 @@ interface UploadStageProps {
 // is unwieldy as a Tailwind arbitrary value — inline style keeps it readable.
 const STAGE_BG: React.CSSProperties = {
   background:
-    "radial-gradient(circle at 1px 1px, rgba(15, 23, 42, 0.06) 1px, transparent 0) 0 0 / 16px 16px, var(--color-bg)",
+    "radial-gradient(circle at 1px 1px, rgba(15, 23, 42, 0.12) 1px, transparent 0) 0 0 / 16px 16px, var(--color-bg)",
 };
 
 const LABEL_CLASS =
