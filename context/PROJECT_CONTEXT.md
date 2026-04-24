@@ -482,6 +482,52 @@ End-to-end CRUD surface for saved templates: index page with row kebab (Edit/Dup
 - **Undo button clipping.** Text "Undo" needed ~44px but the row grid column was 26px, and the rules-editor card's `overflow-hidden` clipped the overflow. Fix: replaced the text with the `Undo2` icon, same 26×26 footprint as the trash.
 - **Sidebar nav highlight regression** (unrelated to Templates — discovered while testing the new nav link). Active-page blue pill wasn't rendering on *any* nav link. Root cause: `NAV_ITEM_BASE` contained `bg-transparent`, and the active-state ternary added `bg-accent-weak`. In the generated `layout.css`, `.bg-accent-weak` is emitted at line ~992 and `.bg-transparent` at ~1040 — at equal specificity source order wins and `bg-transparent` clobbered the active tint. This is exactly the footgun CLAUDE.md §Tailwind-v4 warns about. Fix: removed `bg-transparent` from the base; `NavLink`'s inactive branch and `NavButtonPlaceholder` now add it explicitly, so active and inactive are mutually exclusive.
 
+### Day 13 ✅ — CSV/JSON field export, Turbopack switch, upload-time template control, /documents cleanup *(2026-04-23)*
+
+Three small features + a dev-mode reliability fix. Part A committed mid-session; Parts B/C/D pending end-of-session commit.
+
+**Part A — CSV/JSON field export from the Inspector** *(committed)*
+- New `lib/exporters/field-exporter.ts` — `exportFieldsAsCsv` + `exportFieldsAsJson`. Pure TS, zero new deps. RFC 4180-compliant CSV escaping (cells containing `,` / `"` / `\n` / `\r` get quoted; embedded `"` doubled). Confidence formatted as `95%`, not `0.95`. Filename pattern `{baseName}-fields.{ext}`. Same `triggerDownload` blob-anchor pattern as `pdf-exporter.ts` for consistency. Both functions no-op when `fields.length === 0` so the user never gets an empty file in their downloads folder.
+- `inspector.tsx` gained a `fileName` prop, two `useCallback` handlers, and a new `.exportRow` in the footer with `Export fields` label + CSV / JSON buttons. Both buttons disable when `fields.length === 0`. `inspector.module.css` gained `.exportRow` + `.exportLabel` — isolated from the existing `.footerActions > button { flex: 1 }` rule so the export buttons keep their natural width.
+- `review-stage.tsx` passes `fileName={document.fileName}` through.
+- **Excel deliberately deferred.** Considered SheetJS (`xlsx`) and ExcelJS via context7. SheetJS changed to SSPL at v0.18.5 — legally murky for commercial SaaS. ExcelJS is MIT + actively maintained but pulls ~1MB. User opted to ship V1 lean. If added later: ExcelJS with a lazy import so it doesn't bloat the initial bundle.
+
+**Part B — Turbopack for `next dev`** *(uncommitted)*
+- One-line change to `web/package.json`: `"dev": "next dev --turbo"`. Fixes the intermittent `Cannot find module './<chunk>.js'` errors after frontend changes that the user kept hitting in the previous Webpack-based dev mode. Root cause: Webpack's incremental compilation getting its chunk-id map out of sync with the on-disk chunk files during HMR — more pronounced on Windows due to NTFS file-locking races during the write-then-require cycle. Turbopack recompiles at the module level, no chunk renumbering, no desync.
+- One-time cleanup needed before the first restart: `rm -rf web/.next` so the stale Webpack runtime in `.next/server/webpack-runtime.js` doesn't conflict with Turbopack's output.
+- Compatibility verified up-front: `react-pdf` + `pdfjs-dist` (already using the CDN worker URL — exactly the pattern Turbopack handles cleanly), Tailwind v4 + PostCSS (Turbopack supports PostCSS since Next 15), CSS Modules (first-class), `next/dynamic` (full support).
+- Escape hatch if any package ever misbehaves under Turbopack: drop the `--turbo` flag and `rm -rf .next`.
+
+**Part C — Upload-time template control** *(uncommitted)*
+
+Three modes the user can pick from on the landing page before uploading: `Auto` (current behavior — VendorName→VendorHint match), `Pick…` (manual override; user chooses any saved template, VendorName matching is bypassed entirely), `None` (skip all template logic — raw extraction only). Default is `Auto` so the no-thought path matches today's behavior.
+
+**Backend:**
+- New enum `api/Contracts/TemplateApplyMode.cs` (`Auto` / `Manual` / `None`).
+- `DocumentsController.Upload` accepts two new optional form fields: `[FromForm] templateMode` + `[FromForm] templateId`. Validation runs **before** the file save and Azure DI call — fail-fast keeps bad requests cheap (400 on invalid mode string, 400 on `manual` without `templateId`, 404 if the template id doesn't exist). Branching uses `switch` over the enum: `Auto` runs the existing `TryMatchTemplateAsync`, `Manual` sets `document.Template` directly and calls `ApplyTemplateRules` (no name-match attempt — user is overriding), `None` is an explicit no-op.
+- API contract is **additive and back-compat**: omitting both fields preserves the historic auto-match behavior. No schema change, no `rm app.db*`.
+
+**Frontend:**
+- `lib/types.ts` gained `TemplateApplyMode = "auto" | "manual" | "none"`.
+- `lib/api-client.ts`: `uploadDocument(file, options?)` with optional `templateMode` + `templateId`. All existing call sites work unchanged because the second arg is optional.
+- `lib/app-shell-context.ts` + `components/layout/app-shell.tsx` extended to expose the already-fetched `templates` + `templatesLoading` through the context. The upload card reads from there instead of triggering a duplicate `useTemplates()` fetch — single source of truth, sidebar and upload picker share the same list.
+- `components/document/upload-stage.tsx` rewritten with a `TemplateModePicker` sub-component. Preserves the dotted-grid + floating-card aesthetic the user explicitly likes — the new control lives **inside** the existing card, between the description copy and the action buttons:
+  - Segmented radio group reusing the established `SEG_BASE` / `SEG_ACTIVE` / `SEG_INACTIVE` class constants from `save-template-modal.tsx` for visual consistency.
+  - Native `<select>` for the template picker, styled to match the existing modal `<select>` aesthetic (`focus:shadow-[0_0_0_3px_var(--color-accent-weak)]`). Picker only renders when `mode === "manual"` — zero clutter for the 90% Auto case.
+  - Empty-library handling: when `Pick…` is chosen but no templates exist, an italic message tells the user to save one first; both upload buttons disable.
+  - Reset semantic: switching away from manual mode clears the selected template id so a stale id doesn't ride along if the user toggles back.
+  - Drop handler also short-circuits when the manual-but-no-selection state is active (drop is silently ignored — buttons already communicate the disabled state).
+  - "Try sample invoice" respects whatever mode is selected (single code path).
+
+**Part D — Drag-drop upload removed from `/documents`** *(uncommitted)*
+
+User judgment call: `/documents` is now a pure browse view. Dropping a file on a list of files was UX-ambiguous, the "save a click" benefit was illusory (upload still navigates the user away to `/documents/[id]` either way), and consolidating to a single upload entry point on `/` simplified the template-mode feature (one selector, no per-route divergence).
+
+- `components/document/document-list.tsx`: drag-drop wrapper, dragging overlay, file input ref, file handlers, and all upload-related props removed. Header `Upload new` button + empty-state CTA now `<Link href="/">` styled via a shared `PRIMARY_LINK_CLASS` const (avoids the invalid `<button><a></a></button>` nesting; same lesson as Day 7D's "no nested interactive content" rule).
+- `app/documents/page.tsx` simplified: dropped `parsingFileName` state, all upload handlers, the `ParsingOverlay` + `useRouter` imports. Now a thin wrapper that fetches and renders.
+
+**Verified:** `dotnet build` clean (0/0), `pnpm build` clean (7 routes), `pnpm lint` 0 warnings.
+
 ---
 
 ## 6. What's next — runway
@@ -672,42 +718,72 @@ The UI draws 1:1 from the Claude Design mock exported to `Document Parsing Servi
 
 ## 11. Where we left off
 
-**2026-04-23 end of session:**
+**2026-04-23 end of session (Day 13):**
 
-- Days 1–12 feature work complete. Demo date still **2026-05-29**; no urgent runway pressure.
-- **Templates management surface shipped this session** (Phases A–F, see Day 12). All six phases landed: backend `PUT /api/templates/:id` + `POST /api/templates/:id/duplicate`, `/templates` index, `/templates/[id]/edit`, sidebar top-6 cap + "View all →", build/lint clean. Verified by the user — Edit / Duplicate / Delete all work after the portal-bubbling fix.
-- **Day 12 work NOT YET COMMITTED.** Working tree has all of: `api/Contracts/TemplateResponse.cs`, `api/Controllers/TemplatesController.cs`, `api/DocParsing.Api.http`, `web/lib/{types.ts,api-client.ts}`, `web/app/templates/**` (new), `web/components/templates/**` (new), `web/components/layout/sidebar.tsx`, and this `context/PROJECT_CONTEXT.md` update. Latest commit on `main` is still `99fdae7`.
-- **Day 9 Tailwind migration STILL PARTIAL** — `ui/`, `layout/`, `modal/`, `document/` Sub-batch A migrated and committed; `document/bounding-box-overlay`, both `inspector/*` files, and `app/page.module.css` still use CSS Modules. Unchanged this session.
-- **Voice-Fill feature shipped** (Day 10 Phases 1–4, commits `3861a35`/`2fc5085`/`99fdae7`). Full design in `context/VOICE_FEATURE.md`.
+- Days 1–13 feature work complete. Demo date still **2026-05-29**; ample runway, no schedule pressure.
+- **Day 13 Part A (CSV/JSON field export) committed mid-session.** Inspector footer has working CSV + JSON export buttons; pure-TS exporter at `web/lib/exporters/field-exporter.ts`.
+- **Day 13 Parts B + C + D NOT YET COMMITTED.** Working tree has:
+  - `web/package.json` — `"dev": "next dev --turbo"` (Part B)
+  - `api/Contracts/TemplateApplyMode.cs` (new) + `api/Controllers/DocumentsController.cs` (Part C — `Upload` accepts `templateMode` + `templateId` form fields)
+  - `web/lib/types.ts` — added `TemplateApplyMode` union
+  - `web/lib/api-client.ts` — `uploadDocument(file, options?)`
+  - `web/lib/app-shell-context.ts` + `web/components/layout/app-shell.tsx` — context exposes `templates` + `templatesLoading`
+  - `web/components/document/upload-stage.tsx` — segmented control + native picker
+  - `web/components/document/document-list.tsx` — drag-drop removed, header/empty-state CTAs route to `/` (Part D)
+  - `web/app/documents/page.tsx` — simplified to thin browse-only wrapper
+  - This `context/PROJECT_CONTEXT.md` update
+- **Day 12 (Templates management surface) was committed earlier**, along with the Day 13 Part A export. Latest committed work on `main` includes both.
+- **Day 9 Tailwind migration still partial** — `document/bounding-box-overlay`, both `inspector/*` files, and `app/page.module.css` remain on CSS Modules. Unchanged this session.
+- **Voice-Fill feature shipped** (Day 10 Phases 1–4). Full design in `context/VOICE_FEATURE.md`.
+- **Templates management surface shipped** (Day 12 — index + edit + duplicate + atomic PUT/duplicate endpoints).
 
 ### Current git state
 
-- Working tree dirty — all Day 12 changes uncommitted.
-- `TEMPLATES_PAGE.md` §6 planned one commit per phase (`feat(templates): add PUT update + POST duplicate endpoints`, etc.); if you'd rather bundle, that's fine — they all shipped in one session.
+- Working tree dirty — all Day 13 Parts B + C + D uncommitted (Part A was committed mid-session).
+- Suggested commit grouping for the uncommitted work:
+  - `chore(web): switch dev bundler to Turbopack` *(Part B — package.json)*
+  - `feat(upload): user-selectable template mode (auto / manual / none)` *(Part C — backend enum + endpoint, frontend types/client/context/upload-stage)*
+  - `chore(documents): drop drag-drop upload, route CTAs to /` *(Part D)*
+  - Or one bundled commit if you'd rather not split — they all shipped same session.
 
 ### First actions for the next session
 
-1. **Commit the Day 12 work** — either six per-phase commits per `TEMPLATES_PAGE.md` §6, or a single `feat(templates): ship management surface (Phases A–F)` commit if bundling. User runs commits themselves.
-2. **Decide the `LastUsedAt` question** (§6 item 1). If yes: add nullable `DateTime? LastUsedAt` to `Template`, wire a one-line write in `TemplateFillLoader` on load, swap sidebar `slice` sort key. Cost is `rm api/app.db*`. If the answer is "defer again," leave sidebar cap on CreatedAt indefinitely.
-3. **"Edit template" button on the fill stage** (§6 item 4) — trivial now that `/templates/:id/edit` exists; just a `<Button>` in `template-fill-stage.tsx`'s toolbar that `router.push`es to `/templates/:id/edit`. ~10 minutes.
-4. **Start seeding demo docs** (§6 item 2) — still outstanding, demo-critical. Options in §6.
-5. Consider picking up any §6 demo-nice-to-have item (required-field export warning, search/filter on documents table, template-delete staleness fix, Line Items renderer, Voice Phase 4 polish leftovers).
-6. **`use context7`** for any Tailwind v4 / Next.js 15 / React 19 / pdf-lib / pdfjs-dist uncertainty.
+1. **Commit the Day 13 work** (B + C + D — see suggested grouping above). User runs commits themselves.
+2. **Wipe `web/.next` once + restart dev** so Turbopack starts cold without conflicting with the old Webpack runtime. After that, normal `pnpm dev` works as expected.
+3. **End-to-end test the new template-mode flow:**
+   - `Auto` upload → verify same behavior as today (VendorName match still works).
+   - `Pick…` upload with a chosen template → verify the override applies even when VendorName wouldn't have matched.
+   - `None` upload → verify zero template rules applied even if a vendor match exists.
+   - `Pick…` with empty library → verify the disabled state + "save one first" message.
+4. **Decide the `LastUsedAt` question** (§6 item 1). If yes: add nullable `DateTime? LastUsedAt` to `Template`, wire a one-line write in `TemplateFillLoader` on load, swap sidebar `slice` sort key. Cost is `rm api/app.db*`. If the answer is "defer again," leave sidebar cap on CreatedAt indefinitely.
+5. **"Edit template" button on the fill stage** (§6 item 4) — trivial now that `/templates/:id/edit` exists; just a `<Button>` in `template-fill-stage.tsx`'s toolbar that `router.push`es to `/templates/:id/edit`. ~10 minutes.
+6. **Start seeding demo docs** (§6 item 2) — still outstanding, demo-critical. Options in §6.
+7. Consider picking up any §6 demo-nice-to-have item (required-field export warning, search/filter on documents table, template-delete staleness fix, Line Items renderer, Voice Phase 4 polish leftovers).
+8. **`use context7`** for any Tailwind v4 / Next.js 15 / React 19 / pdf-lib / pdfjs-dist uncertainty.
 
-### Key patterns now established (reuse — don't reinvent)
+### Patterns established this session (Day 13 — reuse, don't reinvent)
 
-- **Loader state machine**: `template-fill-loader.tsx` + `template-edit-loader.tsx` are the model. Discriminated union over `loading | ready | not-found | error`; `notFound()` called during render, not in an effect.
+- **Field export**: `lib/exporters/field-exporter.ts` — pure TS, RFC 4180 CSV escaping, blob-anchor download. The model for any future client-side data export.
+- **Form-data multipart with extra fields**: `lib/api-client.ts` `uploadDocument(file, options?)` — `FormData.append` per field, `[FromForm]` binding on the controller side. Use this whenever an upload needs side-channel metadata.
+- **Context-shared, fetched-once data**: extending `AppShellContextValue` (per Day 13 Part C templates exposure) is the right move when multiple pages would otherwise duplicate-fetch the same list.
+- **Styled-link replacement for primary buttons**: `PRIMARY_LINK_CLASS` const in `document-list.tsx` — use when a navigation needs to look like a primary button. Avoids the invalid `<button><a></a></button>` nesting (Day 7D rule still applies).
+- **Native `<select>` for picker UIs**: `upload-stage.tsx` `TemplateModePicker` uses a native `<select>` styled with the `focus:shadow-[0_0_0_3px_var(--color-accent-weak)]` ring. Reach for the portaled custom popover (e.g., `template-row-actions.tsx`) only when the menu has more than just a flat list of options.
+
+### Patterns from prior days still in heavy use
+
+- **Loader state machine**: `template-fill-loader.tsx` + `template-edit-loader.tsx` — discriminated union over `loading | ready | not-found | error`; `notFound()` during render, not in an effect.
 - **Inline edit on rule/field properties**: `lib/hooks/use-inline-edit.ts` — rule rows reuse it.
 - **Table aesthetic**: `document-list.tsx` or `templates-table.tsx` (Day 12) — `group`/`group-hover:bg-accent-weak`, shared `BODY_CELL` const, kebab column via portaled menu.
 - **Portaled action menu**: `template-row-actions.tsx` — portal to `document.body`, `onClick={(e) => e.stopPropagation()}` on the root to prevent bubbling back through the React tree, document-level mousedown listener to close on outside click.
 - **Modal for destructive confirm**: `modal/delete-template-modal.tsx` works as-is.
-- **Input class constants**: `template-metadata-form.tsx` exports `LABEL_CLASS` / `INPUT_CLASS` / `TEXTAREA_CLASS`; `save-template-modal.tsx` has matching + `SEG_*` variants.
+- **Input class constants**: `template-metadata-form.tsx` exports `LABEL_CLASS` / `INPUT_CLASS` / `TEXTAREA_CLASS`; `save-template-modal.tsx` has matching + `SEG_*` variants (now reused in `upload-stage.tsx`).
 - **Placeholder consolidation**: `template-fill-placeholder.tsx` + `template-edit-placeholder.tsx` + `templates-placeholder.tsx` — each co-locates loading skeleton + error + not-found panels in one file, imported from `loading.tsx` + `not-found.tsx` route conventions + the loader component.
 - **Pessimistic save with snapshot rollback**: `template-edit-stage.tsx` — `JSON.stringify` dirty check, rollback to snapshot on error, beforeunload guard for tab close, window.confirm for in-app Cancel.
 
 ### Open deferred items (for reference)
 
 - **Finish Day 9 Tailwind migration** — `document/bounding-box-overlay` + `inspector/*` (both files) + `app/page.module.css`. No blockers; pattern is well-established; estimate ~half-day.
+- **Excel field export** — deferred from Day 13 Part A. If added later, use **ExcelJS** (MIT, actively maintained, ~1MB) with a lazy import to keep the initial bundle lean. **Do not use SheetJS (`xlsx`)** — it switched to SSPL at v0.18.5, which is legally murky for commercial SaaS.
 - **Seed demo documents** — still not done. §6 item 2.
 - **Required-field export warning** — §6 item 3.
 - **"Edit template" button on fill stage** — §6 item 4.
@@ -754,4 +830,4 @@ The UI draws 1:1 from the Claude Design mock exported to `Document Parsing Servi
 
 ---
 
-_Last updated: 2026-04-23 end-of-session. Days 1–12 feature work complete; Day 12 (Templates management surface — Phases A–F) NOT YET COMMITTED on `main` (latest commit still `99fdae7`). Day 9 Tailwind migration still PARTIAL — `ui/`, `layout/`, `modal/`, and `document/` Sub-batch A are migrated; `document/bounding-box-overlay`, `inspector/{inspector,inspector-field}`, and `app/page.module.css` remain on CSS Modules. Voice-Fill feature shipped (Phases 1–4, see `context/VOICE_FEATURE.md`). PDF export hardened — CropBox-origin math + local-background-color sampling + ghost opacity dropped for an Acrobat/Sejda-style form-fill UX. Demo date ~2026-05-29. Templates management surface shipped (see Day 12): index + edit + duplicate + top-6 sidebar cap + atomic PUT/duplicate endpoints. Next up: commit Day 12, decide `LastUsedAt` question, "Edit template" button on fill stage, seed demo docs._
+_Last updated: 2026-04-23 end-of-session (Day 13). Days 1–13 feature work complete. Day 12 (Templates management surface) was committed earlier; Day 13 Part A (CSV/JSON field export) committed mid-session; Day 13 Parts B (Turbopack), C (upload-time template control: Auto / Pick / None), and D (`/documents` drag-drop removed) ALL UNCOMMITTED. Day 9 Tailwind migration still PARTIAL — `document/bounding-box-overlay`, `inspector/{inspector,inspector-field}`, and `app/page.module.css` remain on CSS Modules. Voice-Fill feature shipped (Phases 1–4, see `context/VOICE_FEATURE.md`). PDF export hardened (CropBox-origin math + local-background-color sampling + ghost-opacity drop for an Acrobat/Sejda-style form-fill UX). Demo date ~2026-05-29. Excel field export deliberately deferred — use ExcelJS (MIT) if added later, NOT SheetJS (SSPL since v0.18.5). Next up: commit Day 13 work, wipe `web/.next` once before restart, end-to-end test the new template-mode flow, decide `LastUsedAt` question, "Edit template" button on fill stage, seed demo docs._
