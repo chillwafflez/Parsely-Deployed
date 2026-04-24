@@ -1,6 +1,12 @@
+"use client";
+
+import * as React from "react";
 import Image from "next/image";
+import { usePathname } from "next/navigation";
 import { LayoutTemplate, Settings } from "lucide-react";
 import { Button } from "../ui/button";
+import { useAppShell } from "@/lib/app-shell-context";
+import type { TemplateSummary } from "@/lib/types";
 
 interface TopbarProps {
   documentName?: string;
@@ -8,6 +14,10 @@ interface TopbarProps {
 }
 
 export function Topbar({ documentName, templateName }: TopbarProps) {
+  const pathname = usePathname();
+  const { templates } = useAppShell();
+  const crumbs = buildBreadcrumbs(pathname, documentName, templates);
+
   return (
     <header
       className={[
@@ -33,19 +43,24 @@ export function Topbar({ documentName, templateName }: TopbarProps) {
         />
         <span>Parsely</span>
       </div>
-      <nav
-        className="flex items-center gap-[7px] text-ink-3 text-[13.5px]"
-        aria-label="Breadcrumbs"
-      >
-        <span className="text-ink-4">/</span>
-        <span>Documents</span>
-        {documentName && (
-          <>
-            <span className="text-ink-4">/</span>
-            <span className="text-ink font-medium">{documentName}</span>
-          </>
-        )}
-      </nav>
+      {crumbs.length > 0 && (
+        <nav
+          className="flex items-center gap-[7px] text-ink-3 text-[13.5px]"
+          aria-label="Breadcrumbs"
+        >
+          {crumbs.map((crumb, i) => {
+            const isLast = i === crumbs.length - 1;
+            return (
+              <React.Fragment key={`${i}-${crumb}`}>
+                <span className="text-ink-4">/</span>
+                <span className={isLast ? "text-ink font-medium" : undefined}>
+                  {crumb}
+                </span>
+              </React.Fragment>
+            );
+          })}
+        </nav>
+      )}
       {templateName && (
         <span
           title={`Matched template: ${templateName}`}
@@ -79,4 +94,42 @@ export function Topbar({ documentName, templateName }: TopbarProps) {
       </div>
     </header>
   );
+}
+
+/**
+ * Builds the breadcrumb segments for the current route. Returns label strings
+ * only — the Topbar handles the separator and "you-are-here" styling on the
+ * last segment. An empty array means no breadcrumb is rendered (the Parsely
+ * logo is enough context on its own).
+ *
+ *  /                          → []                    (upload landing, no crumb)
+ *  /documents                 → ["Documents"]
+ *  /documents/<id>            → ["Documents", <doc name>]
+ *  /templates                 → ["Templates"]
+ *  /templates/<id>/edit|new   → ["Templates", <template name>]
+ *
+ * Template name comes from the already-fetched summary list in shell context,
+ * so deep-linking to a template URL before that list loads briefly shows just
+ * `Templates` until the name arrives. Prototype-acceptable.
+ */
+function buildBreadcrumbs(
+  pathname: string,
+  documentName: string | undefined,
+  templates: TemplateSummary[]
+): string[] {
+  if (pathname === "/documents") return ["Documents"];
+  if (pathname.startsWith("/documents/")) {
+    return documentName ? ["Documents", documentName] : ["Documents"];
+  }
+
+  if (pathname === "/templates") return ["Templates"];
+  if (pathname.startsWith("/templates/")) {
+    const templateId = /^\/templates\/([^/]+)\//.exec(pathname)?.[1];
+    const template = templateId
+      ? templates.find((t) => t.id === templateId)
+      : undefined;
+    return template ? ["Templates", template.name] : ["Templates"];
+  }
+
+  return [];
 }
