@@ -1,6 +1,7 @@
 {
   "ConnectionStrings": {
-    "Default": "Server=(localdb)\\mssqllocaldb;Database=DocParsing;Trusted_Connection=True;TrustServerCertificate=True"
+    "Default": "Server=(localdb)\\mssqllocaldb;Database=DocParsing;Trusted_Connection=True;TrustServerCertificate=True",
+    "BlobStorage": "DefaultEndpointsProtocol=https;AccountName=docparsingstorage;AccountKey=PASTE_KEY_HERE;EndpointSuffix=core.windows.net"
   },
   "DocumentIntelligence": {
     "Endpoint": "",

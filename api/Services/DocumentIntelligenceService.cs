@@ -28,14 +28,13 @@ public class DocumentIntelligenceService : IDocumentIntelligenceService
     }
 
     public async Task<DocumentExtractionResult> AnalyzeAsync(
-        string filePath,
+        Stream content,
         string modelId,
         CancellationToken cancellationToken = default)
     {
-        await using var stream = File.OpenRead(filePath);
-        var bytes = await BinaryData.FromStreamAsync(stream, cancellationToken);
+        var bytes = await BinaryData.FromStreamAsync(content, cancellationToken);
 
-        _logger.LogInformation("Analyzing {File} with model {ModelId}", filePath, modelId);
+        _logger.LogInformation("Analyzing document with model {ModelId}", modelId);
 
         var operation = await _client.AnalyzeDocumentAsync(
             WaitUntil.Completed,

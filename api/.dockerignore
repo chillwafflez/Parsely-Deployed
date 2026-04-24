@@ -1,0 +1,23 @@
+# .NET build artifacts (must be excluded — host bin/obj would conflict
+# with the SDK build that runs inside the container)
+bin/
+obj/
+
+# Local dev config (may contain secrets if ever populated locally)
+appsettings.Development.json
+
+# Stale SQLite files (we're on SQL Server now, but defensive)
+app.db
+app.db-shm
+app.db-wal
+
+# Local upload dir from the pre-Blob-Storage era
+uploads/
+
+# IDE / editor state
+.vs/
+*.user
+
+# Docker meta (Docker reads these outside the image)
+Dockerfile
+.dockerignore

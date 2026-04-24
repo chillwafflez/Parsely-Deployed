@@ -12,8 +12,8 @@ namespace DocParsing.Api.Controllers;
 [Route("api/[controller]")]
 public class DocumentsController(
     IDocumentIntelligenceService intelligence,
+    IBlobStorageService blobs,
     AppDbContext db,
-    IHostEnvironment env,
     ILogger<DocumentsController> logger) : ControllerBase
 {
     private const long MaxUploadBytes = 20 * 1024 * 1024;
@@ -50,12 +50,14 @@ public class DocumentsController(
     }
 
     [HttpGet("{id:guid}/file")]
-    public IActionResult GetFile(Guid id)
+    public async Task<IActionResult> GetFile(Guid id, CancellationToken ct)
     {
-        var doc = db.Documents.AsNoTracking().FirstOrDefault(d => d.Id == id);
-        if (doc is null || !System.IO.File.Exists(doc.StoragePath)) return NotFound();
+        var doc = await db.Documents.AsNoTracking().FirstOrDefaultAsync(d => d.Id == id, ct);
+        if (doc is null) return NotFound();
 
-        var stream = System.IO.File.OpenRead(doc.StoragePath);
+        var stream = await blobs.TryOpenReadAsync(doc.StoragePath, ct);
+        if (stream is null) return NotFound();
+
         var contentType = GuessContentType(doc.OriginalFileName);
         return File(stream, contentType, doc.OriginalFileName);
     }
@@ -95,23 +97,26 @@ public class DocumentsController(
                 return NotFound(new { error = "Template not found." });
         }
 
-        var uploadsDir = Path.Combine(env.ContentRootPath, "uploads");
-        Directory.CreateDirectory(uploadsDir);
-
         var id = Guid.NewGuid();
         var safeName = Path.GetFileName(file.FileName);
-        var storagePath = Path.Combine(uploadsDir, $"{id:N}-{safeName}");
+        var blobName = $"{id:N}-{safeName}";
+        var contentType = string.IsNullOrWhiteSpace(file.ContentType)
+            ? GuessContentType(safeName)
+            : file.ContentType;
 
-        await using (var fs = System.IO.File.Create(storagePath))
-        {
-            await file.CopyToAsync(fs, ct);
-        }
+        // Buffer once so we can both upload to blob storage and feed the same
+        // bytes into Azure DI without a second network round-trip.
+        await using var buffer = new MemoryStream();
+        await file.CopyToAsync(buffer, ct);
+
+        buffer.Position = 0;
+        await blobs.UploadAsync(blobName, buffer, contentType, ct);
 
         var document = new Document
         {
             Id = id,
             OriginalFileName = safeName,
-            StoragePath = storagePath,
+            StoragePath = blobName,
             ModelId = string.IsNullOrWhiteSpace(modelId) ? DefaultModelId : modelId,
             Status = DocumentStatus.Analyzing,
             CreatedAt = DateTime.UtcNow,
@@ -119,7 +124,8 @@ public class DocumentsController(
 
         try
         {
-            var extraction = await intelligence.AnalyzeAsync(storagePath, document.ModelId, ct);
+            buffer.Position = 0;
+            var extraction = await intelligence.AnalyzeAsync(buffer, document.ModelId, ct);
 
             foreach (var f in extraction.Fields)
             {

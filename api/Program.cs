@@ -1,6 +1,7 @@
 using DocParsing.Api.Data;
 using DocParsing.Api.Services;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Azure;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -14,13 +15,16 @@ builder.Services.Configure<SpeechOptions>(
     builder.Configuration.GetSection(SpeechOptions.SectionName));
 builder.Services.Configure<OpenAIOptions>(
     builder.Configuration.GetSection(OpenAIOptions.SectionName));
+builder.Services.Configure<BlobStorageOptions>(
+    builder.Configuration.GetSection(BlobStorageOptions.SectionName));
 
 builder.Services.AddSingleton<IDocumentIntelligenceService, DocumentIntelligenceService>();
 builder.Services.AddSingleton<ISpeechTokenProvider, SpeechTokenProvider>();
 builder.Services.AddSingleton<IVoiceFillService, VoiceFillService>();
+builder.Services.AddSingleton<IBlobStorageService, BlobStorageService>();
 
-var connectionString = builder.Configuration.GetConnectionString("Default");
-if (string.IsNullOrWhiteSpace(connectionString))
+var sqlConnectionString = builder.Configuration.GetConnectionString("Default");
+if (string.IsNullOrWhiteSpace(sqlConnectionString))
 {
     throw new InvalidOperationException(
         "Connection string 'Default' is not configured. For local development, run: " +
@@ -28,15 +32,33 @@ if (string.IsNullOrWhiteSpace(connectionString))
         "In Azure, supply it via the ConnectionStrings__Default environment variable / Container Apps secret.");
 }
 
+var blobConnectionString = builder.Configuration.GetConnectionString("BlobStorage");
+if (string.IsNullOrWhiteSpace(blobConnectionString))
+{
+    throw new InvalidOperationException(
+        "Connection string 'BlobStorage' is not configured. For local development, run: " +
+        "dotnet user-secrets set \"ConnectionStrings:BlobStorage\" \"<value>\". " +
+        "In Azure, supply it via the ConnectionStrings__BlobStorage environment variable / Container Apps secret.");
+}
+
 builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseSqlServer(connectionString));
+    options.UseSqlServer(sqlConnectionString));
+
+builder.Services.AddAzureClients(clients =>
+{
+    clients.AddBlobServiceClient(blobConnectionString);
+});
 
 const string WebCorsPolicy = "WebOrigins";
+var allowedOrigins = builder.Configuration
+    .GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [];
+
 builder.Services.AddCors(options =>
 {
     options.AddPolicy(WebCorsPolicy, policy =>
     {
-        policy.WithOrigins("http://localhost:3000")
+        policy.WithOrigins(allowedOrigins)
+              .SetIsOriginAllowedToAllowWildcardSubdomains()
               .AllowAnyHeader()
               .AllowAnyMethod();
     });

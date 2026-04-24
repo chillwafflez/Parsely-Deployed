@@ -3,7 +3,7 @@ namespace DocParsing.Api.Services;
 public interface IDocumentIntelligenceService
 {
     Task<DocumentExtractionResult> AnalyzeAsync(
-        string filePath,
+        Stream content,
         string modelId,
         CancellationToken cancellationToken = default);
 }
