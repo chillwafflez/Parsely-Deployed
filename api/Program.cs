@@ -19,9 +19,17 @@ builder.Services.AddSingleton<IDocumentIntelligenceService, DocumentIntelligence
 builder.Services.AddSingleton<ISpeechTokenProvider, SpeechTokenProvider>();
 builder.Services.AddSingleton<IVoiceFillService, VoiceFillService>();
 
+var connectionString = builder.Configuration.GetConnectionString("Default");
+if (string.IsNullOrWhiteSpace(connectionString))
+{
+    throw new InvalidOperationException(
+        "Connection string 'Default' is not configured. For local development, run: " +
+        "dotnet user-secrets set \"ConnectionStrings:Default\" \"<value>\". " +
+        "In Azure, supply it via the ConnectionStrings__Default environment variable / Container Apps secret.");
+}
+
 builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseSqlite(builder.Configuration.GetConnectionString("Default")
-        ?? "Data Source=app.db"));
+    options.UseSqlServer(connectionString));
 
 const string WebCorsPolicy = "WebOrigins";
 builder.Services.AddCors(options =>
@@ -36,10 +44,13 @@ builder.Services.AddCors(options =>
 
 var app = builder.Build();
 
+// TODO (Phase 2): move to migration bundles applied by CI/CD instead of on app start.
+// Migrate-on-startup is fine for the prototype (single ACA replica, no concurrent writers)
+// but Microsoft's guidance flags it as risky at production scale.
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-    db.Database.EnsureCreated();
+    db.Database.Migrate();
 }
 
 if (app.Environment.IsDevelopment())
