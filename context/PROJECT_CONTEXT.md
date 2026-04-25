@@ -528,6 +528,72 @@ User judgment call: `/documents` is now a pure browse view. Dropping a file on a
 
 **Verified:** `dotnet build` clean (0/0), `pnpm build` clean (7 routes), `pnpm lint` 0 warnings.
 
+### Day 14 ✅ — Deployment Phase 1 + ACR bootstrap push *(2026-04-24, afternoon)*
+
+Continuation of the Day 14 morning deployment-planning session. Moved from architecture decisions (§13) to actual code changes + first image push to ACR. **All five Phase-1 code changes shipped + bootstrap image pushed.** Container App creation is the immediate next step.
+
+**Phase 1 step 1 + 2 — EF Core migrations + SQLite → SQL Server provider swap**
+- Pinned `dotnet-ef` 10.0.0 via local tool manifest (`.config/dotnet-tools.json`) — best practice over global install, reproducible in CI. (One-time gotcha: some SDK versions create the manifest at the bare cwd as `dotnet-tools.json` rather than under `.config/` — moved to convention path manually. See §7 Deployment.)
+- Removed `Microsoft.EntityFrameworkCore.Sqlite`, added `Microsoft.EntityFrameworkCore.SqlServer` 10.0.0.
+- `Program.cs`: `UseSqlite(...)` → `UseSqlServer(...)`. Replaced silent `?? "Data Source=app.db"` fallback with a fail-fast guard pointing at `dotnet user-secrets set` (dev) or `ConnectionStrings__Default` env var (ACA). `EnsureCreated()` → `Migrate()` with a `// TODO (Phase 2)` noting Migrate-on-startup is acceptable for our single-replica scale-to-zero ACA prototype but Microsoft's guidance flags it risky at scale; Phase 2 should switch to `dotnet ef migrations bundle` applied via CI/CD before container revision swap.
+- `appsettings.json`: blanked `ConnectionStrings:Default` placeholder. `appsettings.Development.json.example`: added LocalDB connection-string sample.
+- Generated `Migrations/20260424224557_Initial.cs` — types map idiomatically: `Guid` → `uniqueidentifier`, `string HasMaxLength(N)` → `nvarchar(N)`, `bool` → `bit`, `float` → `real`, `DateTime` → `datetime2`. All 3 FKs and 6 indexes match `OnModelCreating` (Document→Template `SetNull`; ExtractedField→Document, TemplateFieldRule→Template both `Cascade`).
+- Applied to `(localdb)\mssqllocaldb` → `DocParsing` database. EF auto-created the DB on first apply.
+- **Local dev DB choice: SQL Server LocalDB.** Connection string `Server=(localdb)\mssqllocaldb;Database=DocParsing;Trusted_Connection=True;TrustServerCertificate=True`. `TrustServerCertificate=True` required because `Microsoft.Data.SqlClient` v4+ enforces TLS by default and LocalDB uses a self-signed cert.
+- Smoke test passed: full upload + edit + template + re-upload flow works against SQL Server.
+
+**Phase 1 step 3 — Local file storage → Azure Blob Storage**
+- Added `Azure.Storage.Blobs` 12.27.0 + `Microsoft.Extensions.Azure` 1.14.0.
+- New `IBlobStorageService` (`UploadAsync`, `TryOpenReadAsync`) + `BlobStorageService` impl + `BlobStorageOptions` config record (`SectionName`, `ContainerName`). Minimal 2-method surface — no `Delete`/`Exists` (YAGNI; no delete-document endpoint exists, and `Try*` covers 404).
+- `BlobServiceClient` registered via `Microsoft.Extensions.Azure`'s `AddAzureClients(...)` — Microsoft's recommended DI pattern for Azure SDK clients in ASP.NET Core (proper lifecycle vs. manually new-ing).
+- `IDocumentIntelligenceService.AnalyzeAsync` signature changed: `string filePath` → `Stream content`. Decouples DI from filesystem. Only one caller (`DocumentsController.Upload`), no external consumers — safe interface change.
+- `DocumentsController.Upload` rewritten: buffer IFormFile to `MemoryStream` once, upload to blob from buffer, then re-position buffer and pass to `intelligence.AnalyzeAsync`. Single IFormFile read, two consumes of the buffer. Avoids both the redundancy of upload-then-redownload and the IFormFile-multiple-read uncertainty. 20 MB max via `MaxUploadBytes` — fine in memory.
+- `DocumentsController.GetFile` now async; uses `TryOpenReadAsync` (returns `null` on `RequestFailedException` `Status == 404` filter); ASP.NET Core `File()` consumes + disposes the stream.
+- `Document.StoragePath` semantic change: now stores **blob name** (e.g., `<id-N>-<filename>`), not filesystem path. **No DB schema change** — column was already `nvarchar(1024)`.
+- Removed `IHostEnvironment` dependency from controller (no longer needed).
+- `Program.cs`: added `BlobStorageOptions` binding, `AddAzureClients(...)` registration, fail-fast guard on `ConnectionStrings:BlobStorage`.
+- `appsettings.json`: added `ConnectionStrings:BlobStorage` placeholder + `BlobStorage:ContainerName: "uploads"`. `appsettings.Development.json.example`: added Blob connection string sample.
+- **Local dev storage choice: real Azure Blob Storage** (vs. Azurite emulator). User already has `docparsingstoragetaia` provisioned and prototype dev upload volume is tiny — testing the actual prod path with zero new tooling beats the offline-capability win. Tradeoff: dev uploads create real blobs in the prod storage account (negligible cost, periodic manual cleanup).
+- Smoke test passed: upload + analyze + GetFile (PDF preview) all work against real Azure Blob.
+
+**Phase 1 step 4 + 5 — Containerization + production CORS**
+- New `api/Dockerfile`: multi-stage (`mcr.microsoft.com/dotnet/sdk:10.0` build → `mcr.microsoft.com/dotnet/aspnet:10.0` runtime). Layer-cached restore (csproj-first copy, then source). `dotnet publish -c Release /p:UseAppHost=false` skips the platform-exe shim (~10 MB smaller). Runtime stage uses `USER $APP_UID` — the aspnet base image pre-creates non-root user `app` (UID 1654) and pre-sets `ASPNETCORE_HTTP_PORTS=8080`. `EXPOSE 8080` matches ACA's default ingress. Single `ENTRYPOINT ["dotnet", "DocParsing.Api.dll"]`.
+- New `api/.dockerignore`: excludes `bin/`, `obj/`, `appsettings.Development.json`, `app.db*`, `uploads/`, `.vs/`, `*.user`, `Dockerfile`, `.dockerignore`. The `bin/`/`obj/` exclusion is critical (host's local-build artifacts would conflict with the SDK build inside the container).
+- `Program.cs`: CORS now reads `Cors:AllowedOrigins` string array from config (instead of hardcoded `http://localhost:3000`). `SetIsOriginAllowedToAllowWildcardSubdomains()` enabled so a single config entry like `https://*-yourteam.vercel.app` covers all Vercel preview deploys (Microsoft's documented wildcard-subdomain pattern).
+- `appsettings.json`: added `Cors:AllowedOrigins: ["http://localhost:3000"]` (preserves existing dev behavior).
+- For production, ACA env vars: `Cors__AllowedOrigins__0=https://docparsing.vercel.app`, `Cors__AllowedOrigins__1=https://*-yourteam.vercel.app` (or override the array entirely).
+
+**Phase 2 step 6 — Bootstrap image pushed to ACR**
+- `az acr login --name docparsingacr` succeeded via Azure CLI auth (token-based, no admin password needed for push).
+- `docker build -t docparsingacr-eud7hcanetfxe4ae.azurecr.io/docparsing-api:bootstrap ./api` succeeded. First-time pulled .NET 10 SDK + ASP.NET Core runtime base images.
+- `docker push` succeeded. **Image digest: `sha256:437f0e384b547fa7679ca51d552140881676bf2fc05986a5fc195fe46c7dd67a`.** Verified via `az acr repository show -n docparsingacr --image docparsing-api:bootstrap`.
+- 🚩 **CRITICAL DISCOVERY**: ACR login server has a DNL suffix from Tenant Reuse scope. Actual hostname: `docparsingacr-eud7hcanetfxe4ae.azurecr.io` (NOT the simpler `docparsingacr.azurecr.io` the original deploy plan sketched). All future image references — `docker tag`, `docker push`, ACA `--registry-server`, Harness pipeline — must use the full DNL hostname. See §7 Deployment for the gotcha.
+
+**Reality vs §13.4 — discrepancies discovered during ACA env discovery (`az resource list`):**
+- ACR login server is `docparsingacr-eud7hcanetfxe4ae.azurecr.io` (DNL suffix), not `docparsingacr.azurecr.io`.
+- Storage account is `docparsingstoragetaia` (the `taia` suffix was added at provisioning for global uniqueness), not `docparsingstorage`.
+- SQL is on **existing org server `taia-ams-sql` in West US 2** with `docparsing-db` as a database on it — **not a separate `docparsing-sql` server in East US**. Cross-region from East US compute → ~50–80 ms per query overhead. Acceptable for prototype demo.
+- All resources except `taia-env` ACA env live in `cr-rg-prod-taia` resource group.
+- Two ACA envs available: `taia-commission-env` (in `cr-rg-prod-taia`) and `taia-env` (in `taia-rg`). **Chose `taia-commission-env`** — same RG colocation, simpler permissions. (§13.4 table updated.)
+
+**NuGet package changes this session:**
+- Added: `Microsoft.EntityFrameworkCore.SqlServer` 10.0.0, `Azure.Storage.Blobs` 12.27.0, `Microsoft.Extensions.Azure` 1.14.0
+- Removed: `Microsoft.EntityFrameworkCore.Sqlite` 10.0.0
+- Local tool: `dotnet-ef` 10.0.0 (pinned in `.config/dotnet-tools.json`)
+
+**Files added:**
+- `.config/dotnet-tools.json`
+- `api/Migrations/20260424224557_Initial.cs` + `.Designer.cs` + `AppDbContextModelSnapshot.cs`
+- `api/Services/{IBlobStorageService.cs, BlobStorageService.cs, BlobStorageOptions.cs}`
+- `api/Dockerfile` + `api/.dockerignore`
+
+**Suggested commits (3 logical units, all uncommitted at session end):**
+- `feat(api): migrate from SQLite to SQL Server (LocalDB local, Azure SQL prod)`
+- `feat(api): replace local file storage with Azure Blob Storage`
+- `feat(api): containerize + production CORS`
+
+**Verified:** `dotnet build` clean (0/0), all Phase-1 smoke tests passing locally, image confirmed in ACR with verified digest.
+
 ---
 
 ## 6. What's next — runway
@@ -648,6 +714,22 @@ Demo is **2026-05-29** (~5 weeks out as of 2026-04-23 — user extended the orig
 
 **Mixed lockfiles.** pnpm is the source of truth. If `package-lock.json` ever reappears in `web/`, delete it — it means someone ran `npm install` by mistake. Confirm via `ls web/node_modules/.pnpm` (should exist).
 
+### Deployment
+
+**ACR with Tenant Reuse / DNL scope appends a random suffix to the login server.** When `az acr create` is run with `dnlScope=TenantReuse`, the resulting login server is NOT the simple `<name>.azurecr.io` — it's `<name>-<random>.azurecr.io` (e.g., `docparsingacr-eud7hcanetfxe4ae.azurecr.io`). Always check `az acr show -n <name> --query loginServer -o tsv` for the actual hostname. All `docker tag` / `docker push` commands AND any ACA `--registry-server` parameter / Harness pipeline reference must use the full DNL hostname. (Day 14 lesson — original deploy-plan example using `docparsingacr.azurecr.io` would have failed.)
+
+**LocalDB connection strings need `TrustServerCertificate=True`.** `Microsoft.Data.SqlClient` v4+ enforces TLS by default; LocalDB uses a self-signed cert. Without `TrustServerCertificate=True` you get a "certificate chain… not trusted" exception at first connect. (`Trusted_Connection=True` already covers Windows auth — no password.)
+
+**Azure SQL connection string for ACA is different from the local LocalDB string.** Don't reuse the user-secret `ConnectionStrings:Default` value when constructing the ACA `sql-conn` secret — they target different servers. Pull the ACA value from Azure portal → SQL server → Connection strings → ADO.NET, then swap in the SQL admin password.
+
+**`dotnet ef` needs the tool manifest at `.config/dotnet-tools.json`.** Some SDK versions create it at the bare cwd as `dotnet-tools.json` instead of under `.config/`. Move to convention path; verify with `dotnet tool restore && dotnet ef --version`.
+
+**Cross-region database adds 50–80 ms per query.** Our SQL is on `taia-ams-sql` in West US 2 (existing org server); ACA + Blob + DI are in East US. For prototype demo with low query volume this is fine, but pages that fan out multiple SQL queries (Inspector load, document list, template list) compound the latency. Phase 2 cleanup if needed: provision a new SQL server in East US.
+
+**`Migrate()` on startup is OK for our prototype, NOT for production scale.** Microsoft's official guidance flags `db.Database.Migrate()` at app startup as risky at scale (concurrent migration apply on multi-replica deploys, slow startup, failed-migration crash loop). For our single-replica scale-to-zero ACA prototype it's acceptable. Phase 2 should switch to `dotnet ef migrations bundle --self-contained` and apply via a CI/CD pre-step before swapping container revisions. Already commented as `// TODO (Phase 2)` in `Program.cs`.
+
+**Buffer-once pattern for upload + downstream processing.** When a controller needs to both persist an `IFormFile` AND pass it to a downstream service (e.g., upload to blob + analyze with DI), copy to `MemoryStream` once, then re-position before each consumer. Avoids the IFormFile-multiple-read uncertainty AND the redundancy of upload-then-redownload. See `DocumentsController.Upload` (Day 14 lesson).
+
 ---
 
 ## 8. Security notes
@@ -718,56 +800,77 @@ The UI draws 1:1 from the Claude Design mock exported to `Document Parsing Servi
 
 ## 11. Where we left off
 
-**2026-04-23 end of session (Day 13):**
+**2026-04-24 end of session (Day 14 — afternoon, deployment Phase 1 + ACR push):**
 
-- Days 1–13 feature work complete. Demo date still **2026-05-29**; ample runway, no schedule pressure.
-- **Day 13 Part A (CSV/JSON field export) committed mid-session.** Inspector footer has working CSV + JSON export buttons; pure-TS exporter at `web/lib/exporters/field-exporter.ts`.
-- **Day 13 Parts B + C + D NOT YET COMMITTED.** Working tree has:
-  - `web/package.json` — `"dev": "next dev --turbo"` (Part B)
-  - `api/Contracts/TemplateApplyMode.cs` (new) + `api/Controllers/DocumentsController.cs` (Part C — `Upload` accepts `templateMode` + `templateId` form fields)
-  - `web/lib/types.ts` — added `TemplateApplyMode` union
-  - `web/lib/api-client.ts` — `uploadDocument(file, options?)`
-  - `web/lib/app-shell-context.ts` + `web/components/layout/app-shell.tsx` — context exposes `templates` + `templatesLoading`
-  - `web/components/document/upload-stage.tsx` — segmented control + native picker
-  - `web/components/document/document-list.tsx` — drag-drop removed, header/empty-state CTAs route to `/` (Part D)
-  - `web/app/documents/page.tsx` — simplified to thin browse-only wrapper
-  - This `context/PROJECT_CONTEXT.md` update
-- **Day 12 (Templates management surface) was committed earlier**, along with the Day 13 Part A export. Latest committed work on `main` includes both.
-- **Day 9 Tailwind migration still partial** — `document/bounding-box-overlay`, both `inspector/*` files, and `app/page.module.css` remain on CSS Modules. Unchanged this session.
-- **Voice-Fill feature shipped** (Day 10 Phases 1–4). Full design in `context/VOICE_FEATURE.md`.
-- **Templates management surface shipped** (Day 12 — index + edit + duplicate + atomic PUT/duplicate endpoints).
+- Days 1–13 feature work complete and committed to `main`. Demo date still **2026-05-29**; ample runway, no schedule pressure.
+- **Phase 1 of deployment shipped** (SQL Server provider swap + EF migrations, Azure Blob Storage swap, Dockerfile + `.dockerignore`, production CORS) — see Day 14 entry in §5 for full detail.
+- **Phase 2 step 6 done**: bootstrap image `docparsing-api:bootstrap` pushed to ACR with verified digest `sha256:437f0e38…`.
+- **Phase 2 step 7 (Container App create) is the immediate pickup point** — pre-drafted command below.
+- §13.4 table refreshed with verified resource names (storage account `docparsingstoragetaia`, SQL on shared `taia-ams-sql` in West US 2, ACR DNL hostname). §7 Deployment subsection added with the gotchas surfaced this session.
+- **Day 9 Tailwind migration still partial** — `document/bounding-box-overlay`, both `inspector/*` files, and `app/page.module.css` remain on CSS Modules. Untouched this session.
 
 ### Current git state
 
-- Working tree dirty — all Day 13 Parts B + C + D uncommitted (Part A was committed mid-session).
-- Suggested commit grouping for the uncommitted work:
-  - `chore(web): switch dev bundler to Turbopack` *(Part B — package.json)*
-  - `feat(upload): user-selectable template mode (auto / manual / none)` *(Part C — backend enum + endpoint, frontend types/client/context/upload-stage)*
-  - `chore(documents): drop drag-drop upload, route CTAs to /` *(Part D)*
-  - Or one bundled commit if you'd rather not split — they all shipped same session.
+- Working tree dirty — Day 14 deployment Phase 1 changes uncommitted at session end.
+- Suggested commit grouping (3 logical units, all shipped this session):
+  - `feat(api): migrate from SQLite to SQL Server (LocalDB local, Azure SQL prod)`
+  - `feat(api): replace local file storage with Azure Blob Storage`
+  - `feat(api): containerize + production CORS`
 
 ### First actions for the next session
 
-1. **Commit the Day 13 work** (B + C + D — see suggested grouping above). User runs commits themselves.
-2. **Wipe `web/.next` once + restart dev** so Turbopack starts cold without conflicting with the old Webpack runtime. After that, normal `pnpm dev` works as expected.
-3. **End-to-end test the new template-mode flow:**
-   - `Auto` upload → verify same behavior as today (VendorName match still works).
-   - `Pick…` upload with a chosen template → verify the override applies even when VendorName wouldn't have matched.
-   - `None` upload → verify zero template rules applied even if a vendor match exists.
-   - `Pick…` with empty library → verify the disabled state + "save one first" message.
-4. **Decide the `LastUsedAt` question** (§6 item 1). If yes: add nullable `DateTime? LastUsedAt` to `Template`, wire a one-line write in `TemplateFillLoader` on load, swap sidebar `slice` sort key. Cost is `rm api/app.db*`. If the answer is "defer again," leave sidebar cap on CreatedAt indefinitely.
-5. **"Edit template" button on the fill stage** (§6 item 4) — trivial now that `/templates/:id/edit` exists; just a `<Button>` in `template-fill-stage.tsx`'s toolbar that `router.push`es to `/templates/:id/edit`. ~10 minutes.
-6. **Start seeding demo docs** (§6 item 2) — still outstanding, demo-critical. Options in §6.
-7. Consider picking up any §6 demo-nice-to-have item (required-field export warning, search/filter on documents table, template-delete staleness fix, Line Items renderer, Voice Phase 4 polish leftovers).
-8. **`use context7`** for any Tailwind v4 / Next.js 15 / React 19 / pdf-lib / pdfjs-dist uncertainty.
+1. **Commit the Phase 1 deployment work** (3 suggested commits above). User runs commits themselves.
+2. **Run the pre-drafted `az containerapp create` command** to materialize the Container App. Swap the 6 `<…>` placeholders in your terminal — **none of those values should land in chat / commits / docs**:
+   ```bash
+   az containerapp create \
+     --name docparsing-api \
+     --resource-group cr-rg-prod-taia \
+     --environment taia-commission-env \
+     --image docparsingacr-eud7hcanetfxe4ae.azurecr.io/docparsing-api:bootstrap \
+     --registry-server docparsingacr-eud7hcanetfxe4ae.azurecr.io \
+     --registry-username docparsingacr \
+     --registry-password '<ACR_ADMIN_PASSWORD>' \
+     --target-port 8080 \
+     --ingress external \
+     --min-replicas 0 \
+     --max-replicas 1 \
+     --secrets \
+       "sql-conn=<SQL_CONNECTION_STRING>" \
+       "blob-conn=<BLOB_CONNECTION_STRING>" \
+       "di-key=<DOCAI_KEY>" \
+       "speech-key=<SPEECH_KEY>" \
+       "openai-key=<OPENAI_KEY>" \
+     --env-vars \
+       "ASPNETCORE_ENVIRONMENT=Production" \
+       "ConnectionStrings__Default=secretref:sql-conn" \
+       "ConnectionStrings__BlobStorage=secretref:blob-conn" \
+       "BlobStorage__ContainerName=uploads" \
+       "DocumentIntelligence__Endpoint=https://taia-ams-docai.cognitiveservices.azure.com/" \
+       "DocumentIntelligence__Key=secretref:di-key" \
+       "Speech__Key=secretref:speech-key" \
+       "Speech__Region=eastus" \
+       "OpenAI__Key=secretref:openai-key" \
+       "OpenAI__Model=gpt-4o-mini" \
+       "Cors__AllowedOrigins__0=http://localhost:3000"
+   ```
+   Placeholder retrieval (run in terminal, never chat):
+   - ACR password: `az acr credential show -n docparsingacr --query passwords[0].value -o tsv`
+   - SQL conn: Azure portal → `taia-ams-sql` → Connection strings → ADO.NET (**different value from local LocalDB user-secret** — see §7 Deployment).
+   - Blob conn: from local `dotnet user-secrets list` (`ConnectionStrings:BlobStorage`) — same value works since dev uses real Azure Blob.
+   - DI / Speech / OpenAI keys: same as local user-secrets values.
+3. **Smoke-test the ACA URL with `curl`** (Phase 2 step 8). Hit the FQDN ACA assigns post-create (something like `https://docparsing-api.<random>.<region>.azurecontainerapps.io`); confirm `GET /api/documents` returns `200 []` (empty list, expected on a fresh DB). Then `curl -F file=@samples/sample-invoice.pdf https://<fqdn>/api/documents/upload` and verify the response contains extracted fields.
+4. **After smoke-test passes**: pull the FQDN into the Vercel setup (Phase 3 step 9) and add the Vercel prod domain to `Cors__AllowedOrigins__1` via `az containerapp update`.
+5. **`use context7`** for any Tailwind v4 / Next.js 15 / React 19 / pdf-lib / pdfjs-dist / Azure CLI uncertainty.
 
-### Patterns established this session (Day 13 — reuse, don't reinvent)
+### Patterns established this session (Day 14 — reuse, don't reinvent)
 
-- **Field export**: `lib/exporters/field-exporter.ts` — pure TS, RFC 4180 CSV escaping, blob-anchor download. The model for any future client-side data export.
-- **Form-data multipart with extra fields**: `lib/api-client.ts` `uploadDocument(file, options?)` — `FormData.append` per field, `[FromForm]` binding on the controller side. Use this whenever an upload needs side-channel metadata.
-- **Context-shared, fetched-once data**: extending `AppShellContextValue` (per Day 13 Part C templates exposure) is the right move when multiple pages would otherwise duplicate-fetch the same list.
-- **Styled-link replacement for primary buttons**: `PRIMARY_LINK_CLASS` const in `document-list.tsx` — use when a navigation needs to look like a primary button. Avoids the invalid `<button><a></a></button>` nesting (Day 7D rule still applies).
-- **Native `<select>` for picker UIs**: `upload-stage.tsx` `TemplateModePicker` uses a native `<select>` styled with the `focus:shadow-[0_0_0_3px_var(--color-accent-weak)]` ring. Reach for the portaled custom popover (e.g., `template-row-actions.tsx`) only when the menu has more than just a flat list of options.
+- **`Microsoft.Extensions.Azure` `AddAzureClients(...)` for any Azure SDK client.** Industry-standard DI pattern. Lifecycle managed by Microsoft. We use it for `BlobServiceClient`; future Service Bus / Key Vault / Cosmos clients should follow the same pattern.
+- **Buffer-once pattern for upload + downstream processing.** When a controller needs to both persist an `IFormFile` AND pass it to a downstream service, copy to `MemoryStream` once, then re-position before each consumer. Avoids the IFormFile-multiple-read uncertainty AND the redundancy of upload-then-redownload. Used in `DocumentsController.Upload`.
+- **`Try*` over `Exists*` for blob/SQL-style "fetch or 404" flows.** `IBlobStorageService.TryOpenReadAsync` returns `Stream?`; caller checks `null` → 404. Single round trip vs. existence-check + get pattern. Same pattern fits `BlobClient` (catch `RequestFailedException ex when ex.Status == 404`).
+- **Fail-fast on missing config at app startup**, with a friendly error pointing at the right resolution path (user-secrets for dev, env var for prod). Used for `ConnectionStrings:Default` and `ConnectionStrings:BlobStorage`. Matches existing pattern from `DocumentIntelligenceService` validation.
+- **`SetIsOriginAllowedToAllowWildcardSubdomains()` for Vercel-style preview deploys.** Single CORS config entry like `https://*-yourteam.vercel.app` covers all preview branches. Microsoft's documented pattern. Avoid raw `SetIsOriginAllowed(callback)` unless wildcard-subdomain doesn't fit the case.
+- **`dotnet-ef` as a local tool via `.config/dotnet-tools.json`** rather than global install. Pins the EF version per-repo; reproducible in CI; no machine-wide pollution. Restored on a fresh checkout via `dotnet tool restore`.
+- **Multi-stage Dockerfile with `aspnet:10.0` runtime + `USER $APP_UID`.** Non-root by default, port 8080 pre-set, layer-cached restore. Template applies to any future .NET service we containerize.
 
 ### Patterns from prior days still in heavy use
 
@@ -864,16 +967,21 @@ Deploy-readiness work tracked separately from feature development. Goal: get the
 
 ### 13.4. Azure provisioning status (as of 2026-04-24)
 
-| Resource | Name | Status | Notes |
+_Refreshed Day 14 against `az resource list` reality. Several names differ from the original deploy plan — see notes._
+
+| Resource | Name (verified) | Status | Notes |
 |---|---|---|---|
-| Azure Container Registry | `docparsingacr` | ✅ Created | Basic SKU, **admin credentials enabled**, **Tenant Reuse** DNL scope, **RBAC Registry Permissions** mode (no ABAC). Save login server + username + passwords for Harness secrets. |
-| Azure SQL Server | `docparsing-sql` | ✅ Created | SQL auth, admin user `sqladmin`. East US. |
-| Azure SQL Database | `docparsing-db` | ✅ Created | GP Serverless, Gen5, 1 vCore, 60-min auto-pause. Firewall: **Allow Azure services = Yes** + current client IP — both set post-creation via Security → Networking (wizard's Networking tab was read-only). |
-| Blob Storage Account | `docparsingstorage` | ✅ Created | Standard LRS, StorageV2, East US. |
-| Blob Container | `uploads` | ✅ Created | Private. Connection string copied. |
-| Container Apps Environment | (existing, shared) | ✅ Reused | Two envs already exist (created by lead); ask lead which one to target. User cannot create new ones. |
-| Container App | `docparsing-api` | ❌ Failed + deleted | First attempt with `mcr.microsoft.com/dotnet/samples:aspnetapp` placeholder image failed to deploy. Cause not diagnosed — deferred until real API image exists. **Don't retry with a placeholder** — build the real image first. |
-| Vercel project | — | ⏳ Pending | Connect repo, set `NEXT_PUBLIC_API_URL` to ACA app URL, grab deploy hook URL. |
+| Resource group | `cr-rg-prod-taia` | ✅ In use | All deployment resources except `taia-env` ACA env. East US. |
+| Azure Container Registry | `docparsingacr`, login server `docparsingacr-eud7hcanetfxe4ae.azurecr.io` | ✅ Created + image pushed | Basic SKU, **admin credentials enabled**, **Tenant Reuse** DNL scope (the random suffix in the login server hostname comes from this scope). Bootstrap image `docparsing-api:bootstrap` pushed Day 14, digest `sha256:437f0e38…`. |
+| Azure SQL Server | `taia-ams-sql` (existing org server) | ✅ Reused | SQL auth, admin user `sqladmin`. **West US 2** — cross-region from East US compute (~50–80 ms/query). Acceptable for prototype. (Original deploy plan said `docparsing-sql` East US — that was wishful; the actual setup reuses the existing org server.) |
+| Azure SQL Database | `docparsing-db` (on `taia-ams-sql`) | ✅ Created + migrated | GP Serverless, Gen5, 1 vCore, 60-min auto-pause. EF `Initial` migration applied locally to LocalDB; the same migration will apply to `docparsing-db` on first ACA startup via `Migrate()`. Firewall: **Allow Azure services = Yes** + client IP. |
+| Blob Storage Account | `docparsingstoragetaia` | ✅ Created + in use | Standard LRS, StorageV2, East US. The `taia` suffix was added at provisioning time for global uniqueness. (Original deploy plan said `docparsingstorage`.) |
+| Blob Container | `uploads` | ✅ Created + in use | Private. Connection string in local `ConnectionStrings:BlobStorage` user-secret. Day-14 Blob Storage swap uses real Azure in dev (not Azurite). |
+| Container Apps Environment | `taia-commission-env` (in `cr-rg-prod-taia`, East US) | ✅ Chosen | Selected over `taia-env` (in `taia-rg`) for same-RG colocation with ACR / Storage / DI / Speech. Both envs were already provisioned by lead. |
+| Container App | `docparsing-api` | ⏳ Pending create | Day-14-morning failed/deleted attempt with placeholder image is moot now that the real image is in ACR. Pre-drafted `az containerapp create` command lives in §11 / §13.6. |
+| Azure Document Intelligence | `taia-ams-docai` | ✅ In use | Existing org resource. Endpoint `https://taia-ams-docai.cognitiveservices.azure.com/`, East US. |
+| Azure Speech | `taia-ams-speech` | ✅ In use | Existing org resource, East US. Used by Voice-Fill feature. |
+| Vercel project | — | ⏳ Pending | Connect repo, set `NEXT_PUBLIC_API_URL` to ACA app URL, grab deploy hook URL. Phase 3. |
 
 ### 13.5. Portal gotchas encountered (2026-04-24)
 
@@ -881,29 +989,68 @@ Deploy-readiness work tracked separately from feature development. Goal: get the
 - **No "Connectivity method: Public endpoint" option** — some subscriptions hide it via policy. Use **Selected networks** after creation.
 - **User cannot create new Resource Groups or Container Apps Environments.** Reuse existing; confirm with lead which ACA env to target.
 - **"Cannot access ACR because admin credentials are disabled"** — the ACR admin toggle must be explicitly enabled under **Settings → Access keys → Admin user = Enabled** before Container Apps can pull.
-- **Container App create with a placeholder image failed to deploy** — cause unknown. Next session: build + push the real image first, then create the Container App via CLI.
+- **Container App create with a placeholder image failed to deploy** — Day-14-morning attempt. Worked around by: (1) building the real API image (Phase 1 steps 1–5), (2) pushing to ACR as `:bootstrap` (Day 14 afternoon), (3) using the real image when re-creating via CLI (Phase 2 step 7, next session).
+- **ACR DNL hostname is not the simple `<name>.azurecr.io`.** With Tenant Reuse scope, the actual login server has a random suffix (ours: `docparsingacr-eud7hcanetfxe4ae.azurecr.io`). Always use `az acr show -n <name> --query loginServer -o tsv` for the canonical value. Discovered Day 14 — would have broken `docker push` if used the simple form.
+- **`az resource list` is the source of truth, not the deploy plan.** Day 14's discovery surfaced three name discrepancies (storage account, SQL server, ACR login server) and two existing ACA envs to pick from. Always cross-check provisioning intentions against actual resource state before constructing CLI commands.
 
 ### 13.6. Remaining work (prioritized for the next session)
 
-**Phase 1 — Code changes (single focused session):**
-
-1. **Add EF Core migrations** — `dotnet ef migrations add Initial`; wire `context.Database.Migrate()` in `Program.cs`. `EnsureCreated()` works fine for SQLite locally but blocks schema evolution on Azure SQL.
-2. **Swap `UseSqlite` → `UseSqlServer`** in `Program.cs` — add `Microsoft.EntityFrameworkCore.SqlServer` package. Schema uses only Id/string/DateTime/nullable FK — no SQLite-specific types, clean swap.
-3. **Swap local file save → Azure Blob SDK** — add `Azure.Storage.Blobs`; new `IBlobStorageService` wrapping `BlobContainerClient.UploadAsync` + `GetBlobClient(name).OpenReadAsync()`. Replace `FileStream` + `Path.Combine("uploads", ...)` calls in `DocumentsController`. Persist blob name in existing `Document.StoragePath` — no schema change.
-4. **Write API Dockerfile** — multi-stage (`sdk:10.0` build → `aspnet:10.0` runtime), expose 8080, `ENTRYPOINT ["dotnet", "DocParsing.Api.dll"]`. **Ship `.dockerignore`** to skip `bin/`, `obj/`, `app.db*`, `uploads/`, `.env*`, `appsettings.Development.json`.
-5. **CORS update** — whitelist Vercel prod domain + preview-deploy wildcard pattern. Don't use `*`.
+**Phase 1 — Code changes:** ✅ **All shipped Day 14 afternoon.** See Day 14 entry in §5 for full detail. Three suggested commits, all uncommitted at session end:
+- `feat(api): migrate from SQLite to SQL Server (LocalDB local, Azure SQL prod)` (steps 1+2)
+- `feat(api): replace local file storage with Azure Blob Storage` (step 3)
+- `feat(api): containerize + production CORS` (steps 4+5)
 
 **Phase 2 — First deploy (plumbing):**
 
-6. **Bootstrap push to ACR locally:** `az acr login --name docparsingacr && docker build -t docparsingacr.azurecr.io/docparsing-api:bootstrap ./api && docker push docparsingacr.azurecr.io/docparsing-api:bootstrap`.
-7. **Create Container App via CLI** (not portal) with env vars + secrets: `ConnectionStrings__DefaultConnection`, `Azure__StorageConnection`, `DocumentIntelligence__Endpoint` (plain), `DocumentIntelligence__Key`, plus Voice/OpenAI/Speech secrets per `VOICE_FEATURE.md`.
-8. **End-to-end smoke test** — `curl` upload against the ACA URL, verify it hits Azure SQL + Blob.
+6. ✅ **Bootstrap push to ACR.** Done Day 14. Image `docparsing-api:bootstrap` in `docparsingacr-eud7hcanetfxe4ae.azurecr.io`, digest `sha256:437f0e38…`.
+
+7. ⏳ **Create Container App via CLI** — immediate next step. Pre-drafted command (also in §11):
+   ```bash
+   az containerapp create \
+     --name docparsing-api \
+     --resource-group cr-rg-prod-taia \
+     --environment taia-commission-env \
+     --image docparsingacr-eud7hcanetfxe4ae.azurecr.io/docparsing-api:bootstrap \
+     --registry-server docparsingacr-eud7hcanetfxe4ae.azurecr.io \
+     --registry-username docparsingacr \
+     --registry-password '<ACR_ADMIN_PASSWORD>' \
+     --target-port 8080 \
+     --ingress external \
+     --min-replicas 0 \
+     --max-replicas 1 \
+     --secrets \
+       "sql-conn=<SQL_CONNECTION_STRING>" \
+       "blob-conn=<BLOB_CONNECTION_STRING>" \
+       "di-key=<DOCAI_KEY>" \
+       "speech-key=<SPEECH_KEY>" \
+       "openai-key=<OPENAI_KEY>" \
+     --env-vars \
+       "ASPNETCORE_ENVIRONMENT=Production" \
+       "ConnectionStrings__Default=secretref:sql-conn" \
+       "ConnectionStrings__BlobStorage=secretref:blob-conn" \
+       "BlobStorage__ContainerName=uploads" \
+       "DocumentIntelligence__Endpoint=https://taia-ams-docai.cognitiveservices.azure.com/" \
+       "DocumentIntelligence__Key=secretref:di-key" \
+       "Speech__Key=secretref:speech-key" \
+       "Speech__Region=eastus" \
+       "OpenAI__Key=secretref:openai-key" \
+       "OpenAI__Model=gpt-4o-mini" \
+       "Cors__AllowedOrigins__0=http://localhost:3000"
+   ```
+   Placeholder retrieval guidance is in §11. **None of those secret values should land in chat / commits / docs** — only in the local terminal.
+
+8. **End-to-end smoke test** — once step 7 succeeds, ACA returns an FQDN like `https://docparsing-api.<random>.<region>.azurecontainerapps.io`. Verify:
+   - `curl https://<fqdn>/api/documents` returns `200 []` (empty list, expected on a fresh DB).
+   - `Migrate()` ran on first startup — confirm by re-listing documents (no errors) or by checking `docparsing-db` tables exist.
+   - `curl -F file=@samples/sample-invoice.pdf https://<fqdn>/api/documents/upload` returns extracted fields (full Blob + DI round-trip exercised).
 
 **Phase 3 — Frontend + pipeline:**
 
-9. **Create Vercel project** — import repo (mirror to GitHub if needed), set `NEXT_PUBLIC_API_URL`, grab deploy hook URL.
-10. **Harness pipeline YAML** — CI stage: `BuildAndPushToACR`. CD stage: `Run: az containerapp update --image ...` and `Run: curl -X POST $VERCEL_DEPLOY_HOOK`. Harness secrets: ACR creds, Azure service principal for `az`, Vercel deploy hook URL.
-11. **Smoke test from a clean push to `main`**.
+9. **Create Vercel project** — import repo (mirror to GitHub if needed), set `NEXT_PUBLIC_API_URL` to the ACA FQDN from step 8, grab deploy hook URL. Add the Vercel prod domain to ACA's `Cors__AllowedOrigins__1` (and preview wildcard to `__2` if desired) via `az containerapp update --replace-env-vars …`.
+
+10. **Harness pipeline YAML** — CI stage: `BuildAndPushToACR` step targeting `docparsingacr-eud7hcanetfxe4ae.azurecr.io/docparsing-api:$BUILD_NUMBER`. CD stage: `Run: az containerapp update --image …` and `Run: curl -X POST $VERCEL_DEPLOY_HOOK`. Harness secrets: ACR creds, Azure service principal for `az`, Vercel deploy hook URL.
+
+11. **Smoke test from a clean push to `main`** — push a trivial change, watch pipeline build + deploy, verify the live app reflects the change.
 
 ### 13.7. Anti-patterns to avoid during deployment
 
@@ -933,4 +1080,4 @@ Rough monthly, idle-heavy prototype usage:
 
 ---
 
-_Last updated: 2026-04-24 (Day 14 — deployment planning session, in a separate Claude session from the most recent Day 13 feature work). Days 1–13 feature work complete and committed to `main` (last commit `7d0336e` "chore: have breadcrumb update based on page"). Section 13 appended this session captures the deployment architecture decisions, Azure provisioning status (ACR + SQL + Blob + ACA env done; Container App failed + deleted; Vercel pending), and the prioritized remaining work for the next session. Day 9 Tailwind migration still PARTIAL — `document/bounding-box-overlay`, `inspector/{inspector,inspector-field}`, and `app/page.module.css` remain on CSS Modules. Voice-Fill feature shipped (Phases 1–4, see `context/VOICE_FEATURE.md`). PDF export hardened (CropBox-origin math + local-background-color sampling + ghost-opacity drop for an Acrobat/Sejda-style form-fill UX). Demo date ~2026-05-29. Excel field export deliberately deferred — use ExcelJS (MIT) if added later, NOT SheetJS (SSPL since v0.18.5). Next up: commit Day 13 work, wipe `web/.next` once before restart, end-to-end test the new template-mode flow, decide `LastUsedAt` question, "Edit template" button on fill stage, seed demo docs._
+_Last updated: 2026-04-24 (Day 14 afternoon — deployment Phase 1 + ACR bootstrap push). Days 1–13 feature work complete and committed to `main` (last commit `7d0336e` "chore: have breadcrumb update based on page"). Day 14 morning was deployment planning (§13.1–13.5); Day 14 afternoon shipped Phase 1 code changes (SQL Server + EF migrations, Azure Blob Storage, Dockerfile, production CORS) and Phase 2 step 6 (bootstrap image pushed to ACR with verified digest `sha256:437f0e38…`). Three Day-14-afternoon commits suggested but uncommitted at session end. **Pickup point**: Phase 2 step 7 — run the pre-drafted `az containerapp create` command (see §11 / §13.6) to materialize the Container App. §13.4 table refreshed against `az resource list` reality — corrected resource names: `docparsingstoragetaia` (not `docparsingstorage`), `taia-ams-sql` server in West US 2 hosting `docparsing-db` (not a separate `docparsing-sql`), ACR login server has DNL suffix `docparsingacr-eud7hcanetfxe4ae.azurecr.io`. ACA env chosen: `taia-commission-env`. §7 Deployment subsection added. Day 9 Tailwind migration still PARTIAL — `document/bounding-box-overlay`, `inspector/{inspector,inspector-field}`, and `app/page.module.css` remain on CSS Modules. Voice-Fill feature shipped (Phases 1–4, see `context/VOICE_FEATURE.md`). Demo date ~2026-05-29 (~5 weeks runway). Excel field export deliberately deferred — use ExcelJS (MIT) if added later, NOT SheetJS (SSPL since v0.18.5)._
