@@ -4,16 +4,20 @@ import * as React from "react";
 import { Download, FileSearch, History, Info, PenLine, Save, Search, Sparkles } from "lucide-react";
 import { Button } from "../ui/button";
 import { InspectorField } from "./inspector-field";
+import { InspectorTablesSection } from "./inspector-tables-section";
 import { cn } from "@/lib/cn";
 import { groupFields } from "@/lib/field-groups";
 import { exportFieldsAsCsv, exportFieldsAsJson } from "@/lib/exporters/field-exporter";
-import type { ExtractedField, FieldUpdate } from "@/lib/types";
+import type { ExtractedField, ExtractedTable, FieldUpdate } from "@/lib/types";
 import styles from "./inspector.module.css";
 
 type Filter = "all" | "issues" | "required";
 
 interface InspectorProps {
   fields: ExtractedField[];
+  /** Tables detected by Azure DI; rendered in their own section below the
+   *  field groups. Empty array hides the section entirely. */
+  tables: ExtractedTable[];
   fileName: string;
   /**
    * Drives the per-model field grouping (Inspector sections) and the type
@@ -24,6 +28,10 @@ interface InspectorProps {
   typeLabel: string;
   selectedFieldId: string | null;
   onSelectField: (id: string | null) => void;
+  /** Which table is currently "active" (highlighted in the list, and in
+   *  Phase D, opened in the bottom drawer). Independent of field selection. */
+  activeTableId: string | null;
+  onSelectTable: (id: string) => void;
   onUpdateField: (id: string, update: FieldUpdate) => void;
   onDeleteField: (id: string) => void;
   onSaveTemplate: () => void;
@@ -32,11 +40,14 @@ interface InspectorProps {
 
 export function Inspector({
   fields,
+  tables,
   fileName,
   modelId,
   typeLabel,
   selectedFieldId,
   onSelectField,
+  activeTableId,
+  onSelectTable,
   onUpdateField,
   onDeleteField,
   onSaveTemplate,
@@ -153,6 +164,14 @@ export function Inspector({
               ))}
             </section>
           ))
+        )}
+
+        {tables.length > 0 && (
+          <InspectorTablesSection
+            tables={tables}
+            activeTableId={activeTableId}
+            onSelectTable={onSelectTable}
+          />
         )}
       </div>
 

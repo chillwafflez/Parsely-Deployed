@@ -14,6 +14,11 @@ import {
 } from "@/lib/api-client";
 import { useAppShell } from "@/lib/app-shell-context";
 import { getDocumentTypeName } from "@/lib/document-types";
+import {
+  isFieldSelection,
+  selectedFieldId as selectedFieldIdOf,
+  type Selection,
+} from "@/lib/selection";
 import type {
   DocumentResponse,
   DrawResult,
@@ -42,9 +47,36 @@ interface ReviewStageProps {
  */
 export function ReviewStage({ document, onDocumentChange }: ReviewStageProps) {
   const { showToast, refreshTemplates, documentTypes } = useAppShell();
-  const [selectedFieldId, setSelectedFieldId] = React.useState<string | null>(null);
+  // Single source of truth for "what's highlighted on the document". Phase D
+  // will widen the producers (drawer cell-clicks dispatch the tableCell variant);
+  // the discriminated union prevents a stale field highlight from leaking
+  // through when a cell becomes the active selection.
+  const [selection, setSelection] = React.useState<Selection | null>(null);
+  /**
+   * Which table is "active" in the inspector list (Phase C) and, in Phase D,
+   * which tab the bottom drawer opens to. Independent of `selection` so the
+   * drawer can stay open while the user inspects an unrelated field.
+   */
+  const [activeTableId, setActiveTableId] = React.useState<string | null>(null);
   const [pendingDraw, setPendingDraw] = React.useState<DrawResult | null>(null);
   const [showSaveTemplate, setShowSaveTemplate] = React.useState(false);
+
+  const selectedFieldId = selectedFieldIdOf(selection);
+
+  const handleSelectField = React.useCallback((id: string | null) => {
+    setSelection(id ? { kind: "field", fieldId: id } : null);
+  }, []);
+
+  const handleSelectTable = React.useCallback((id: string) => {
+    setActiveTableId((prev) => {
+      if (prev === id) return null;
+      // Switching tables clears any field highlight so the user's attention
+      // shifts cleanly — same intent as field-to-field clicks replacing the
+      // previous selection rather than stacking.
+      setSelection(null);
+      return id;
+    });
+  }, []);
 
   // Catalog-resolved type label used by the Inspector + SaveTemplateModal.
   const typeLabel = React.useMemo(
@@ -112,7 +144,9 @@ export function ReviewStage({ document, onDocumentChange }: ReviewStageProps) {
         return { ...prev, fields: prev.fields.filter((f) => f.id !== fieldId) };
       });
 
-      if (selectedFieldId === fieldId) setSelectedFieldId(null);
+      if (isFieldSelection(selection) && selection.fieldId === fieldId) {
+        setSelection(null);
+      }
 
       try {
         await deleteField(document.id, fieldId);
@@ -130,7 +164,7 @@ export function ReviewStage({ document, onDocumentChange }: ReviewStageProps) {
         showToast(err instanceof Error ? err.message : "Delete failed", "err");
       }
     },
-    [document.id, onDocumentChange, selectedFieldId, showToast]
+    [document.id, onDocumentChange, selection, showToast]
   );
 
   const handleDrawComplete = React.useCallback((result: DrawResult) => {
@@ -153,7 +187,7 @@ export function ReviewStage({ document, onDocumentChange }: ReviewStageProps) {
           polygon: pendingDraw.polygon,
         });
         onDocumentChange((prev) => ({ ...prev, fields: [...prev.fields, created] }));
-        setSelectedFieldId(created.id);
+        setSelection({ kind: "field", fieldId: created.id });
         setPendingDraw(null);
         showToast("Field added — AI will learn this region");
       } catch (err) {
@@ -218,16 +252,19 @@ export function ReviewStage({ document, onDocumentChange }: ReviewStageProps) {
         fileName={document.fileName}
         fields={document.fields}
         selectedFieldId={selectedFieldId}
-        onSelectField={setSelectedFieldId}
+        onSelectField={handleSelectField}
         onDrawComplete={handleDrawComplete}
       />
       <Inspector
         fields={document.fields}
+        tables={document.tables}
         fileName={document.fileName}
         modelId={document.modelId}
         typeLabel={typeLabel}
         selectedFieldId={selectedFieldId}
-        onSelectField={setSelectedFieldId}
+        onSelectField={handleSelectField}
+        activeTableId={activeTableId}
+        onSelectTable={handleSelectTable}
         onUpdateField={handleUpdateField}
         onDeleteField={handleDeleteField}
         onSaveTemplate={handleOpenSaveTemplate}
