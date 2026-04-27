@@ -7,7 +7,7 @@ namespace DocParsing.Api.Contracts;
 public record TemplateSummary(
     Guid Id,
     string Name,
-    string Kind,
+    string ModelId,
     string? Description,
     string ApplyTo,
     string? VendorHint,
@@ -18,7 +18,7 @@ public record TemplateSummary(
 public record TemplateResponse(
     Guid Id,
     string Name,
-    string Kind,
+    string ModelId,
     string? Description,
     string ApplyTo,
     string? VendorHint,
@@ -30,7 +30,7 @@ public record TemplateResponse(
     public static TemplateResponse FromEntity(Template template, int runs) => new(
         Id: template.Id,
         Name: template.Name,
-        Kind: template.Kind,
+        ModelId: template.ModelId,
         Description: template.Description,
         ApplyTo: template.ApplyTo,
         VendorHint: template.VendorHint,
@@ -81,7 +81,6 @@ public record RuleOverride(
 
 public record CreateTemplateRequest(
     [Required, StringLength(256, MinimumLength = 1)] string Name,
-    [Required, StringLength(64, MinimumLength = 1)] string Kind,
     [StringLength(2048)] string? Description,
     [Required, RegularExpression("^(vendor|similar|all)$")] string ApplyTo,
     [Required] Guid SourceDocumentId,
@@ -97,7 +96,6 @@ public record CreateTemplateRequest(
 public record UpdateTemplateRequest(
     [Required, StringLength(256, MinimumLength = 1)] string Name,
     [StringLength(2048)] string? Description,
-    [Required, StringLength(64, MinimumLength = 1)] string Kind,
     [StringLength(512)] string? VendorHint,
     [Required] IReadOnlyList<UpdateTemplateRuleRequest> Rules);
 
@@ -114,11 +112,15 @@ public record UpdateTemplateRuleRequest(
 /// consumed verbatim by <c>POST /api/templates/import</c>. Intentionally omits
 /// all server-generated ids and any reference to the source document so the
 /// file is safe to share across users and databases.
+///
+/// V2 (current): includes <c>ModelId</c> to scope the template to a specific
+/// Azure DI prebuilt model. V1 files (with <c>Kind</c> instead of
+/// <c>ModelId</c>) are no longer accepted — re-export from the source.
 /// </summary>
 public record TemplateExportPayload(
     int Version,
     string Name,
-    string Kind,
+    string ModelId,
     string? Description,
     string ApplyTo,
     string? VendorHint,
@@ -138,9 +140,9 @@ public record TemplateExportRule(
 /// a clean 400 instead of a half-populated row.
 /// </summary>
 public record ImportTemplateRequest(
-    [Required, Range(1, 1)] int Version,
+    [Required, Range(2, 2)] int Version,
     [Required, StringLength(256, MinimumLength = 1)] string Name,
-    [Required, StringLength(64, MinimumLength = 1)] string Kind,
+    [Required, StringLength(128, MinimumLength = 1)] string ModelId,
     [StringLength(2048)] string? Description,
     [Required, RegularExpression("^(vendor|similar|all)$")] string ApplyTo,
     [StringLength(512)] string? VendorHint,

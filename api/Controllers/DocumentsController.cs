@@ -1,4 +1,5 @@
 using System.Text.Json;
+using DocParsing.Api.Catalog;
 using DocParsing.Api.Contracts;
 using DocParsing.Api.Data;
 using DocParsing.Api.Models;
@@ -66,7 +67,7 @@ public class DocumentsController(
     [RequestSizeLimit(MaxUploadBytes)]
     public async Task<ActionResult<DocumentResponse>> Upload(
         IFormFile file,
-        [FromQuery] string? modelId,
+        [FromForm] string? modelId,
         [FromForm] string? templateMode,
         [FromForm] Guid? templateId,
         CancellationToken ct)
@@ -176,29 +177,38 @@ public class DocumentsController(
     }
 
     /// <summary>
-    /// Stopgap template matching: if Azure DI extracted a VendorName, find
-    /// the most recent template whose VendorHint matches (case-insensitive),
-    /// attach it to the document, and apply its field rules. Phase 2 will
-    /// replace the vendor heuristic with layout-fingerprint matching.
+    /// Stopgap template matching: pulls the model's identifier field
+    /// (VendorName for invoices, Employer.Name for W-2s, etc., resolved via
+    /// <see cref="DocumentTypeCatalog"/>) and finds the most recent template
+    /// for the same model whose VendorHint matches case-insensitively.
+    /// Phase 2 will replace this heuristic with layout-fingerprint matching.
     /// </summary>
     private async Task TryMatchTemplateAsync(
         Document document,
         IReadOnlyList<PageExtraction> pages,
         CancellationToken ct)
     {
-        var vendorValue = document.ExtractedFields
+        var typeDef = DocumentTypeCatalog.Find(document.ModelId);
+        if (typeDef is null) return;
+
+        var identifierValue = document.ExtractedFields
             .FirstOrDefault(f =>
-                f.Name.Equals("VendorName", StringComparison.OrdinalIgnoreCase) &&
+                f.Name.Equals(typeDef.IdentifierFieldPath, StringComparison.OrdinalIgnoreCase) &&
                 !string.IsNullOrWhiteSpace(f.Value))
             ?.Value?.Trim();
 
-        if (string.IsNullOrWhiteSpace(vendorValue)) return;
+        if (string.IsNullOrWhiteSpace(identifierValue)) return;
 
-        var normalized = vendorValue.ToLowerInvariant();
+        var normalized = identifierValue.ToLowerInvariant();
+        var modelId = document.ModelId;
 
+        // Scope by ModelId so a W-2 upload never picks up an invoice template
+        // even if their identifier strings happen to collide.
         var match = await db.Templates
             .Include(t => t.Rules)
-            .Where(t => t.VendorHint != null && t.VendorHint.ToLower() == normalized)
+            .Where(t => t.ModelId == modelId
+                        && t.VendorHint != null
+                        && t.VendorHint.ToLower() == normalized)
             .OrderByDescending(t => t.CreatedAt)
             .FirstOrDefaultAsync(ct);
 

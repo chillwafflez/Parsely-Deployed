@@ -10,10 +10,16 @@ import type { TemplateSummary } from "@/lib/types";
 
 interface TopbarProps {
   documentName?: string;
+  /** Catalog-resolved display name for the active document's type. */
+  documentTypeName?: string | null;
   templateName?: string | null;
 }
 
-export function Topbar({ documentName, templateName }: TopbarProps) {
+export function Topbar({
+  documentName,
+  documentTypeName,
+  templateName,
+}: TopbarProps) {
   const pathname = usePathname();
   const { templates } = useAppShell();
   const crumbs = buildBreadcrumbs(pathname, documentName, templates);
@@ -61,11 +67,27 @@ export function Topbar({ documentName, templateName }: TopbarProps) {
           })}
         </nav>
       )}
+      {documentTypeName && (
+        <span
+          title={`Document type: ${documentTypeName}`}
+          className={[
+            "inline-flex items-center ml-2",
+            "py-1 px-[9px]",
+            "text-[12px] font-medium text-ink-2",
+            "bg-surface-2 border border-line",
+            "rounded-full max-w-[160px]",
+            "overflow-hidden text-ellipsis whitespace-nowrap",
+          ].join(" ")}
+        >
+          {documentTypeName}
+        </span>
+      )}
       {templateName && (
         <span
           title={`Matched template: ${templateName}`}
           className={[
-            "inline-flex items-center gap-[5px] ml-2",
+            "inline-flex items-center gap-[5px]",
+            documentTypeName ? "ml-1.5" : "ml-2",
             "py-1 pr-[9px] pl-2",
             "text-[12px] font-medium text-accent-ink",
             "bg-[color-mix(in_oklch,var(--color-accent)_10%,transparent)]",

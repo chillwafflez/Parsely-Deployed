@@ -7,7 +7,9 @@ import { Button } from "../ui/button";
 import { cn } from "@/lib/cn";
 import { updateTemplate } from "@/lib/api-client";
 import { useAppShell } from "@/lib/app-shell-context";
+import { getDocumentTypeName } from "@/lib/document-types";
 import type { Template, UpdateTemplateRequest } from "@/lib/types";
+
 import {
   TemplateMetadataForm,
   type TemplateMetadataDraft,
@@ -33,7 +35,14 @@ interface EditDraft {
  */
 export function TemplateEditStage({ template }: TemplateEditStageProps) {
   const router = useRouter();
-  const { showToast, refreshTemplates } = useAppShell();
+  const { showToast, refreshTemplates, documentTypes } = useAppShell();
+
+  // Display label for the (immutable) document type — recomputed only when
+  // the catalog changes; resolves to the raw modelId until the catalog loads.
+  const typeLabel = React.useMemo(
+    () => getDocumentTypeName(documentTypes, template.modelId),
+    [documentTypes, template.modelId]
+  );
 
   const initial = React.useMemo(() => toDraft(template), [template]);
   const [draft, setDraft] = React.useState<EditDraft>(initial);
@@ -115,7 +124,6 @@ export function TemplateEditStage({ template }: TemplateEditStageProps) {
     const payload: UpdateTemplateRequest = {
       name: trimmedName,
       description: emptyToNull(draft.metadata.description.trim()),
-      kind: draft.metadata.kind.trim() || "Invoice",
       vendorHint: emptyToNull(draft.metadata.vendorHint.trim()),
       rules: draft.rules
         .filter((r) => !r.removed)
@@ -218,6 +226,7 @@ export function TemplateEditStage({ template }: TemplateEditStageProps) {
         >
           <TemplateMetadataForm
             draft={draft.metadata}
+            typeLabel={typeLabel}
             onChange={patchMetadata}
             disabled={submitting}
           />
@@ -255,7 +264,6 @@ function toDraft(template: Template): EditDraft {
     metadata: {
       name: template.name,
       description: template.description ?? "",
-      kind: template.kind,
       vendorHint: template.vendorHint ?? "",
     },
     rules: template.rules.map((rule) => ({

@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import type { DocumentResponse, TemplateSummary } from "./types";
+import type { DocumentResponse, DocumentTypeOption, TemplateSummary } from "./types";
 
 export type ToastTone = "ok" | "err";
 
@@ -10,9 +10,9 @@ export type ToastTone = "ok" | "err";
  * Pages call these to drive the shared chrome (toast root, sidebar template
  * highlight, topbar breadcrumb) without lifting state through the router.
  *
- * Templates are surfaced here so callers (e.g., the upload-stage template
- * picker) read the same already-fetched list the sidebar uses, rather than
- * triggering a duplicate fetch.
+ * Both the template list and the document-type catalog are surfaced here so
+ * any caller (upload picker, sidebar, edit page, …) reads the same already-
+ * fetched data instead of triggering duplicate requests.
  */
 export interface AppShellContextValue {
   showToast: (message: string, tone?: ToastTone) => void;
@@ -20,6 +20,8 @@ export interface AppShellContextValue {
   setActiveDocument: (doc: DocumentResponse | null) => void;
   templates: TemplateSummary[];
   templatesLoading: boolean;
+  documentTypes: DocumentTypeOption[];
+  documentTypesLoading: boolean;
 }
 
 export const AppShellContext = React.createContext<AppShellContextValue | null>(null);

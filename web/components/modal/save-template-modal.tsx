@@ -5,19 +5,13 @@ import { createPortal } from "react-dom";
 import { Check, ChevronDown, Save } from "lucide-react";
 import { Button } from "../ui/button";
 import { cn } from "@/lib/cn";
+import { getDocumentTypeName } from "@/lib/document-types";
 import type {
+  DocumentTypeOption,
   ExtractedField,
   RuleOverride,
   TemplateApplyTo,
 } from "@/lib/types";
-
-const DOCUMENT_KINDS = [
-  "Invoice",
-  "Purchase Order",
-  "Bank Statement",
-  "Tax Form",
-  "Insurance Claim",
-] as const;
 
 const LABEL_CLASS =
   "text-[11px] text-ink-3 font-semibold tracking-[0.04em] uppercase";
@@ -65,10 +59,13 @@ interface SaveTemplateModalProps {
   fields: ExtractedField[];
   /** Suggested name (e.g., vendor-derived) shown as the default. */
   suggestedName: string;
+  /** Source document's Azure DI model id; resolved to a display label via the catalog. */
+  modelId: string;
+  /** Catalog used to resolve the type label; passed in from app-shell context. */
+  documentTypes: DocumentTypeOption[];
   onCancel: () => void;
   onSubmit: (draft: {
     name: string;
-    kind: string;
     description: string;
     applyTo: TemplateApplyTo;
     ruleOverrides?: Record<string, RuleOverride>;
@@ -78,11 +75,19 @@ interface SaveTemplateModalProps {
 export function SaveTemplateModal({
   fields,
   suggestedName,
+  modelId,
+  documentTypes,
   onCancel,
   onSubmit,
 }: SaveTemplateModalProps) {
+  // Type label is implicit from the source document — the user can't pick a
+  // different kind here. Shown as a header badge for orientation.
+  const typeName = React.useMemo(
+    () => getDocumentTypeName(documentTypes, modelId),
+    [documentTypes, modelId]
+  );
+
   const [name, setName] = React.useState(suggestedName);
-  const [kind, setKind] = React.useState<string>("Invoice");
   const [description, setDescription] = React.useState("");
   const [applyTo, setApplyTo] = React.useState<TemplateApplyTo>("similar");
   const [drafts, setDrafts] = React.useState<Record<string, RuleDraft>>({});
@@ -153,7 +158,6 @@ export function SaveTemplateModal({
     try {
       await onSubmit({
         name: name.trim(),
-        kind,
         description: description.trim(),
         applyTo,
         ruleOverrides: buildRuleOverrides(),
@@ -178,12 +182,24 @@ export function SaveTemplateModal({
       >
         <form onSubmit={handleSubmit}>
           <header className="pt-4 px-5 pb-2.5 border-b border-line">
-            <h2
-              id="save-template-title"
-              className="m-0 text-[16px] font-semibold tracking-[-0.01em]"
-            >
-              Save corrections as template
-            </h2>
+            <div className="flex items-center gap-2">
+              <h2
+                id="save-template-title"
+                className="m-0 text-[16px] font-semibold tracking-[-0.01em]"
+              >
+                Save corrections as template
+              </h2>
+              <span
+                title="Document type — derived from the source upload"
+                className={cn(
+                  "inline-flex items-center px-1.5 py-0.5 rounded-md",
+                  "bg-accent-weak border border-accent-border text-accent-ink",
+                  "text-[11px] font-medium tracking-[0.02em]"
+                )}
+              >
+                {typeName}
+              </span>
+            </div>
             <p className="mt-1 mb-0 text-ink-3 text-[12.5px]">
               Future documents from this sender will parse using your corrections —
               field anchors, data types, and validation rules.
@@ -191,33 +207,17 @@ export function SaveTemplateModal({
           </header>
 
           <div className="py-4 px-5 flex flex-col gap-3.5 max-h-[60vh] overflow-auto">
-            <div className="grid grid-cols-[1fr_200px] gap-3.5">
-              <label className="flex flex-col gap-[5px]">
-                <span className={LABEL_CLASS}>Template name</span>
-                <input
-                  ref={nameInputRef}
-                  className={INPUT_CLASS}
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  maxLength={256}
-                  autoComplete="off"
-                />
-              </label>
-              <label className="flex flex-col gap-[5px]">
-                <span className={LABEL_CLASS}>Document kind</span>
-                <select
-                  className={INPUT_CLASS}
-                  value={kind}
-                  onChange={(e) => setKind(e.target.value)}
-                >
-                  {DOCUMENT_KINDS.map((k) => (
-                    <option key={k} value={k}>
-                      {k}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
+            <label className="flex flex-col gap-[5px]">
+              <span className={LABEL_CLASS}>Template name</span>
+              <input
+                ref={nameInputRef}
+                className={INPUT_CLASS}
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                maxLength={256}
+                autoComplete="off"
+              />
+            </label>
 
             <label className="flex flex-col gap-[5px]">
               <span className={LABEL_CLASS}>Description (optional)</span>
@@ -253,7 +253,7 @@ export function SaveTemplateModal({
                   active={applyTo === "all"}
                   onClick={() => setApplyTo("all")}
                 >
-                  All invoices
+                  All documents
                 </SegButton>
               </div>
               <p className="m-0 text-[11.5px] text-ink-4">

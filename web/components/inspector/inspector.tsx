@@ -15,6 +15,13 @@ type Filter = "all" | "issues" | "required";
 interface InspectorProps {
   fields: ExtractedField[];
   fileName: string;
+  /**
+   * Drives the per-model field grouping (Inspector sections) and the type
+   * label in the header — resolved against the catalog one level up.
+   */
+  modelId: string;
+  /** Display label for the document type, used in the header copy. */
+  typeLabel: string;
   selectedFieldId: string | null;
   onSelectField: (id: string | null) => void;
   onUpdateField: (id: string, update: FieldUpdate) => void;
@@ -26,6 +33,8 @@ interface InspectorProps {
 export function Inspector({
   fields,
   fileName,
+  modelId,
+  typeLabel,
   selectedFieldId,
   onSelectField,
   onUpdateField,
@@ -57,7 +66,10 @@ export function Inspector({
     });
   }, [fields, filter, query]);
 
-  const grouped = React.useMemo(() => groupFields(visible), [visible]);
+  const grouped = React.useMemo(
+    () => groupFields(modelId, visible),
+    [modelId, visible]
+  );
   const hasAnyVisible = visible.length > 0;
 
   const handleExportCsv = React.useCallback(() => {
@@ -72,7 +84,7 @@ export function Inspector({
     <aside className={styles.pane} aria-label="Extracted fields">
       <header className={styles.header}>
         <div className={styles.titleRow}>
-          <h3>Parsed fields</h3>
+          <h3>Parsed {typeLabel} fields</h3>
           {templateName && (
             <span className={styles.template}>
               <Sparkles size={13} />

@@ -1,4 +1,5 @@
 using System.Text.Json;
+using DocParsing.Api.Catalog;
 using DocParsing.Api.Contracts;
 using DocParsing.Api.Data;
 using DocParsing.Api.Models;
@@ -20,7 +21,7 @@ public class TemplatesController(AppDbContext db, ILogger<TemplatesController> l
             .Select(t => new TemplateSummary(
                 t.Id,
                 t.Name,
-                t.Kind,
+                t.ModelId,
                 t.Description,
                 t.ApplyTo,
                 t.VendorHint,
@@ -62,9 +63,16 @@ public class TemplatesController(AppDbContext db, ILogger<TemplatesController> l
             return BadRequest(new { error = "Source document not found." });
         }
 
+        // The "vendor hint" is whatever the model considers the document's
+        // identifier — VendorName for invoices, Employer.Name for W-2s, etc.
+        // The catalog is the single source of truth so this stays in sync
+        // with TryMatchTemplateAsync's lookup.
+        var identifierFieldPath = DocumentTypeCatalog
+            .Find(sourceDoc.ModelId)?.IdentifierFieldPath ?? "VendorName";
+
         var vendorHint = sourceDoc.ExtractedFields
             .FirstOrDefault(f =>
-                f.Name.Equals("VendorName", StringComparison.OrdinalIgnoreCase) &&
+                f.Name.Equals(identifierFieldPath, StringComparison.OrdinalIgnoreCase) &&
                 !string.IsNullOrWhiteSpace(f.Value))
             ?.Value?.Trim();
 
@@ -79,7 +87,7 @@ public class TemplatesController(AppDbContext db, ILogger<TemplatesController> l
         {
             Id = Guid.NewGuid(),
             Name = request.Name.Trim(),
-            Kind = request.Kind.Trim(),
+            ModelId = sourceDoc.ModelId,
             Description = string.IsNullOrWhiteSpace(request.Description) ? null : request.Description.Trim(),
             ApplyTo = request.ApplyTo,
             VendorHint = vendorHint,
@@ -155,7 +163,6 @@ public class TemplatesController(AppDbContext db, ILogger<TemplatesController> l
 
         template.Name = request.Name.Trim();
         template.Description = string.IsNullOrWhiteSpace(request.Description) ? null : request.Description.Trim();
-        template.Kind = request.Kind.Trim();
         template.VendorHint = string.IsNullOrWhiteSpace(request.VendorHint) ? null : request.VendorHint.Trim();
 
         var incomingIds = request.Rules.Select(r => r.Id).ToHashSet();
@@ -216,7 +223,7 @@ public class TemplatesController(AppDbContext db, ILogger<TemplatesController> l
         {
             Id = Guid.NewGuid(),
             Name = newName,
-            Kind = source.Kind,
+            ModelId = source.ModelId,
             Description = source.Description,
             ApplyTo = source.ApplyTo,
             VendorHint = source.VendorHint,
@@ -274,7 +281,7 @@ public class TemplatesController(AppDbContext db, ILogger<TemplatesController> l
         var payload = new TemplateExportPayload(
             Version: ExportSchemaVersion,
             Name: template.Name,
-            Kind: template.Kind,
+            ModelId: template.ModelId,
             Description: template.Description,
             ApplyTo: template.ApplyTo,
             VendorHint: template.VendorHint,
@@ -308,7 +315,7 @@ public class TemplatesController(AppDbContext db, ILogger<TemplatesController> l
         {
             Id = Guid.NewGuid(),
             Name = name,
-            Kind = request.Kind.Trim(),
+            ModelId = request.ModelId.Trim(),
             Description = string.IsNullOrWhiteSpace(request.Description) ? null : request.Description.Trim(),
             ApplyTo = request.ApplyTo.Trim(),
             VendorHint = string.IsNullOrWhiteSpace(request.VendorHint) ? null : request.VendorHint.Trim(),
@@ -387,7 +394,9 @@ public class TemplatesController(AppDbContext db, ILogger<TemplatesController> l
         }
     }
 
-    private const int ExportSchemaVersion = 1;
+    // V2 replaces V1's `Kind` (free-text) with `ModelId` (Azure DI prebuilt id).
+    // V1 files are no longer accepted on import — re-export from the source.
+    private const int ExportSchemaVersion = 2;
 
     private static readonly JsonSerializerOptions ExportJsonOptions = new()
     {

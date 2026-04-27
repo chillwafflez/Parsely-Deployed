@@ -18,8 +18,10 @@ import { Button } from "../ui/button";
 import { cn } from "@/lib/cn";
 import { uploadDocument } from "@/lib/api-client";
 import { useAppShell } from "@/lib/app-shell-context";
+import { DEFAULT_MODEL_ID } from "@/lib/document-types";
 import type {
   DocumentResponse,
+  DocumentTypeOption,
   TemplateApplyMode,
   TemplateSummary,
 } from "@/lib/types";
@@ -97,27 +99,40 @@ export function UploadStage({
   onUploadError,
 }: UploadStageProps) {
   const inputRef = React.useRef<HTMLInputElement>(null);
-  const { templates, templatesLoading } = useAppShell();
+  const { templates, templatesLoading, documentTypes, documentTypesLoading } =
+    useAppShell();
   const [isDragging, setIsDragging] = React.useState(false);
+  const [modelId, setModelId] = React.useState<string>(DEFAULT_MODEL_ID);
   const [mode, setMode] = React.useState<TemplateApplyMode>("auto");
   const [selectedTemplateId, setSelectedTemplateId] = React.useState<string>("");
 
-  // Modes that need templates are locked while the library is empty. If the
-  // user was on one of them (including the initial default), fall back to
-  // "none" so the upload buttons stay enabled and the disabled modes don't
-  // visually "stick" as the current selection.
-  const noTemplatesAvailable = !templatesLoading && templates.length === 0;
+  // Templates are scoped per document type — a W-2 template can never apply
+  // to an invoice upload. Filter early so every downstream control sees only
+  // the relevant subset.
+  const compatibleTemplates = React.useMemo(
+    () => templates.filter((t) => t.modelId === modelId),
+    [templates, modelId]
+  );
+
+  // Auto + manual both need templates of the same type. If none exist, fall
+  // back to "none" so the upload buttons stay enabled and the disabled modes
+  // don't visually "stick" as the current selection.
+  const noCompatibleTemplates =
+    !templatesLoading && compatibleTemplates.length === 0;
   React.useEffect(() => {
-    if (noTemplatesAvailable && mode !== "none") {
+    if (noCompatibleTemplates && mode !== "none") {
       setMode("none");
     }
-  }, [noTemplatesAvailable, mode]);
+  }, [noCompatibleTemplates, mode]);
 
-  // Clear stale picker selection whenever mode leaves "manual", so a template
-  // id doesn't ride along if the user toggles back later.
+  // Clear stale picker selection whenever mode leaves "manual" or the
+  // selected type changes — the prior id may be for a different model.
   React.useEffect(() => {
     if (mode !== "manual") setSelectedTemplateId("");
   }, [mode]);
+  React.useEffect(() => {
+    setSelectedTemplateId("");
+  }, [modelId]);
 
   const manualNeedsSelection = mode === "manual" && !selectedTemplateId;
   const uploadDisabled = manualNeedsSelection;
@@ -127,6 +142,7 @@ export function UploadStage({
       onUploadStart(file.name);
       try {
         const doc = await uploadDocument(file, {
+          modelId,
           templateMode: mode,
           templateId: mode === "manual" ? selectedTemplateId : undefined,
         });
@@ -135,7 +151,14 @@ export function UploadStage({
         onUploadError(err instanceof Error ? err.message : "Upload failed");
       }
     },
-    [mode, selectedTemplateId, onUploadStart, onUploadComplete, onUploadError]
+    [
+      modelId,
+      mode,
+      selectedTemplateId,
+      onUploadStart,
+      onUploadComplete,
+      onUploadError,
+    ]
   );
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -186,13 +209,19 @@ export function UploadStage({
           Or choose a file — up to 20 MB.
         </p>
 
-        <div className="mx-auto w-full max-w-[480px] text-left">
+        <div className="mx-auto w-full max-w-[480px] text-left flex flex-col gap-3.5">
+          <DocumentTypePicker
+            documentTypes={documentTypes}
+            loading={documentTypesLoading}
+            value={modelId}
+            onChange={setModelId}
+          />
           <TemplateModePicker
             mode={mode}
             onModeChange={setMode}
-            templates={templates}
+            templates={compatibleTemplates}
             templatesLoading={templatesLoading}
-            noTemplatesAvailable={noTemplatesAvailable}
+            noTemplatesAvailable={noCompatibleTemplates}
             selectedTemplateId={selectedTemplateId}
             onTemplateChange={setSelectedTemplateId}
           />
@@ -226,6 +255,54 @@ export function UploadStage({
           onChange={handleInputChange}
         />
       </div>
+    </div>
+  );
+}
+
+interface DocumentTypePickerProps {
+  documentTypes: DocumentTypeOption[];
+  loading: boolean;
+  value: string;
+  onChange: (modelId: string) => void;
+}
+
+const SELECT_CLASS = cn(
+  "h-9 px-2.5 pr-8 border border-line-strong rounded-md",
+  "bg-surface text-ink font-ui text-[13px] cursor-pointer",
+  "transition-[border-color,box-shadow] duration-100",
+  "focus:outline-0 focus:border-accent",
+  "focus:shadow-[0_0_0_3px_var(--color-accent-weak)]",
+  "disabled:cursor-not-allowed disabled:opacity-70"
+);
+
+function DocumentTypePicker({
+  documentTypes,
+  loading,
+  value,
+  onChange,
+}: DocumentTypePickerProps) {
+  return (
+    <div className="flex flex-col gap-2">
+      <span className={LABEL_CLASS}>Document type</span>
+      <select
+        aria-label="Document type"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        disabled={loading || documentTypes.length === 0}
+        className={SELECT_CLASS}
+      >
+        {loading && documentTypes.length === 0 ? (
+          // Loading placeholder — unselectable but keeps the select rendered
+          // with a sensible label until the catalog arrives.
+          <option value={value}>Loading…</option>
+        ) : (
+          documentTypes.map((dt) => (
+            <option key={dt.modelId} value={dt.modelId}>
+              {dt.displayName}
+            </option>
+          ))
+        )}
+      </select>
     </div>
   );
 }
@@ -354,7 +431,6 @@ function TemplateCombobox({
         const q = query.toLowerCase();
         return (
           t.name.toLowerCase().includes(q) ||
-          t.kind.toLowerCase().includes(q) ||
           (t.vendorHint?.toLowerCase().includes(q) ?? false)
         );
       })
@@ -521,8 +597,10 @@ function TemplateCombobox({
             ) : (
               filtered.map((t) => {
                 const active = t.id === value;
+                // Type label is implicit (the picker is already filtered by
+                // selected modelId), so the meta line shows just the vendor
+                // hint + rule count.
                 const meta = [
-                  t.kind,
                   t.vendorHint,
                   `${t.ruleCount} ${t.ruleCount === 1 ? "field" : "fields"}`,
                 ]

@@ -20,23 +20,26 @@ export const TEXTAREA_CLASS = cn(
   "focus:shadow-[0_0_0_3px_var(--color-accent-weak)]"
 );
 
-const DOCUMENT_KINDS = [
-  "Invoice",
-  "Purchase Order",
-  "Bank Statement",
-  "Tax Form",
-  "Insurance Claim",
-] as const;
+const READONLY_VALUE_CLASS = cn(
+  "h-8 px-2.5 flex items-center",
+  "border border-line rounded-md bg-surface-2",
+  "text-ink-2 font-ui text-[13px]"
+);
 
 export interface TemplateMetadataDraft {
   name: string;
   description: string;
-  kind: string;
   vendorHint: string;
 }
 
 interface TemplateMetadataFormProps {
   draft: TemplateMetadataDraft;
+  /**
+   * Display label for the document type the template was created for.
+   * Resolved from the template's `modelId` by the parent — kept as a string
+   * here so the form doesn't need to know about the catalog.
+   */
+  typeLabel: string;
   onChange: (patch: Partial<TemplateMetadataDraft>) => void;
   disabled: boolean;
 }
@@ -44,10 +47,13 @@ interface TemplateMetadataFormProps {
 /**
  * Left pane of the edit stage. Plain controlled form — dirty tracking and
  * persistence live on the parent stage, which owns the single payload sent
- * to the PUT endpoint.
+ * to the PUT endpoint. The document type is shown read-only because it's
+ * intrinsic to the source upload and changing it would silently rebind the
+ * template to a different prebuilt model.
  */
 export function TemplateMetadataForm({
   draft,
+  typeLabel,
   onChange,
   disabled,
 }: TemplateMetadataFormProps) {
@@ -83,28 +89,15 @@ export function TemplateMetadataForm({
       </label>
 
       <div className="grid grid-cols-2 gap-3">
-        <label className="flex flex-col gap-[5px]">
-          <span className={LABEL_CLASS}>Kind</span>
-          <select
-            className={INPUT_CLASS}
-            value={draft.kind}
-            onChange={(e) => onChange({ kind: e.target.value })}
-            disabled={disabled}
+        <div className="flex flex-col gap-[5px]">
+          <span className={LABEL_CLASS}>Type</span>
+          <div
+            title="Document type — derived from the source upload, not editable here."
+            className={READONLY_VALUE_CLASS}
           >
-            {/* Accept the current value even if it isn't one of the presets —
-                some templates were saved with custom kinds before the select
-                shipped. Otherwise `value` won't match any option and the
-                select will visually default to the first entry. */}
-            {!DOCUMENT_KINDS.includes(draft.kind as (typeof DOCUMENT_KINDS)[number]) && (
-              <option value={draft.kind}>{draft.kind}</option>
-            )}
-            {DOCUMENT_KINDS.map((k) => (
-              <option key={k} value={k}>
-                {k}
-              </option>
-            ))}
-          </select>
-        </label>
+            {typeLabel}
+          </div>
+        </div>
         <label className="flex flex-col gap-[5px]">
           <span className={LABEL_CLASS}>Vendor hint</span>
           <input

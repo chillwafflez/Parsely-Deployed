@@ -13,6 +13,7 @@ import {
   updateField,
 } from "@/lib/api-client";
 import { useAppShell } from "@/lib/app-shell-context";
+import { getDocumentTypeName } from "@/lib/document-types";
 import type {
   DocumentResponse,
   DrawResult,
@@ -40,10 +41,16 @@ interface ReviewStageProps {
  * itself is a controlled prop — the parent loader keeps the shell in sync.
  */
 export function ReviewStage({ document, onDocumentChange }: ReviewStageProps) {
-  const { showToast, refreshTemplates } = useAppShell();
+  const { showToast, refreshTemplates, documentTypes } = useAppShell();
   const [selectedFieldId, setSelectedFieldId] = React.useState<string | null>(null);
   const [pendingDraw, setPendingDraw] = React.useState<DrawResult | null>(null);
   const [showSaveTemplate, setShowSaveTemplate] = React.useState(false);
+
+  // Catalog-resolved type label used by the Inspector + SaveTemplateModal.
+  const typeLabel = React.useMemo(
+    () => getDocumentTypeName(documentTypes, document.modelId),
+    [documentTypes, document.modelId]
+  );
 
   const pdfUrl = React.useMemo(() => apiFileUrl(document.id), [document.id]);
 
@@ -167,7 +174,6 @@ export function ReviewStage({ document, onDocumentChange }: ReviewStageProps) {
   const handleSubmitSaveTemplate = React.useCallback(
     async (draft: {
       name: string;
-      kind: string;
       description: string;
       applyTo: TemplateApplyTo;
       ruleOverrides?: Record<string, RuleOverride>;
@@ -175,7 +181,6 @@ export function ReviewStage({ document, onDocumentChange }: ReviewStageProps) {
       try {
         const template = await createTemplate({
           name: draft.name,
-          kind: draft.kind,
           description: draft.description || null,
           applyTo: draft.applyTo,
           sourceDocumentId: document.id,
@@ -200,9 +205,11 @@ export function ReviewStage({ document, onDocumentChange }: ReviewStageProps) {
     const vendor = document.fields.find(
       (f) => f.name.toLowerCase() === "vendorname" && f.value
     );
-    if (vendor?.value) return `${vendor.value.trim()} — Invoice`;
-    return document.fileName.replace(/\.[^.]+$/, "") + " — Template";
-  }, [document.fields, document.fileName]);
+    const stem = vendor?.value
+      ? vendor.value.trim()
+      : document.fileName.replace(/\.[^.]+$/, "");
+    return `${stem} — ${typeLabel}`;
+  }, [document.fields, document.fileName, typeLabel]);
 
   return (
     <div className="flex flex-1 min-w-0 min-h-0 bg-bg">
@@ -217,6 +224,8 @@ export function ReviewStage({ document, onDocumentChange }: ReviewStageProps) {
       <Inspector
         fields={document.fields}
         fileName={document.fileName}
+        modelId={document.modelId}
+        typeLabel={typeLabel}
         selectedFieldId={selectedFieldId}
         onSelectField={setSelectedFieldId}
         onUpdateField={handleUpdateField}
@@ -235,6 +244,8 @@ export function ReviewStage({ document, onDocumentChange }: ReviewStageProps) {
         <SaveTemplateModal
           fields={document.fields}
           suggestedName={suggestedTemplateName}
+          modelId={document.modelId}
+          documentTypes={documentTypes}
           onCancel={handleCancelSaveTemplate}
           onSubmit={handleSubmitSaveTemplate}
         />
