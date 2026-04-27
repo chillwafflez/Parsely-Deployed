@@ -396,6 +396,61 @@ public class DocumentsController(
         return Ok(ExtractedFieldResponse.FromEntity(field));
     }
 
+    [HttpPatch("{documentId:guid}/tables/{tableId:guid}/cells")]
+    public async Task<ActionResult<TableCellResponse>> UpdateTableCell(
+        Guid documentId,
+        Guid tableId,
+        [FromBody] UpdateTableCellRequest request,
+        CancellationToken ct)
+    {
+        var table = await db.ExtractedTables
+            .FirstOrDefaultAsync(t => t.Id == tableId && t.DocumentId == documentId, ct);
+
+        if (table is null) return NotFound();
+
+        if (request.RowIndex < 0 || request.RowIndex >= table.RowCount ||
+            request.ColumnIndex < 0 || request.ColumnIndex >= table.ColumnCount)
+        {
+            return BadRequest(new { error = "Cell coordinates out of range." });
+        }
+
+        var cells = JsonSerializer.Deserialize<List<TableCellResponse>>(table.CellsJson)
+                    ?? new List<TableCellResponse>();
+
+        // Cells are addressed by (row, col) — for merged cells, that's the
+        // top-left position (Azure's convention; the frontend resolves clicks
+        // anywhere in the merged region back to top-left before sending).
+        var index = cells.FindIndex(c =>
+            c.RowIndex == request.RowIndex && c.ColumnIndex == request.ColumnIndex);
+
+        if (index < 0)
+        {
+            return NotFound(new { error = "Cell not found at the given coordinates." });
+        }
+
+        var existing = cells[index];
+
+        // No-op when content is unchanged — preserves IsCorrected as-is so a
+        // re-save of the original value doesn't visually flag a clean cell.
+        if (existing.Content == request.Content)
+        {
+            return Ok(existing);
+        }
+
+        var updated = existing with
+        {
+            Content = request.Content,
+            IsCorrected = true,
+        };
+
+        cells[index] = updated;
+        table.CellsJson = JsonSerializer.Serialize(cells);
+
+        await db.SaveChangesAsync(ct);
+
+        return Ok(updated);
+    }
+
     /// <summary>
     /// Picks layout words whose center point falls inside the rule's
     /// axis-aligned bounding region, concatenates them, and averages their
