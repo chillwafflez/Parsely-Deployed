@@ -48,7 +48,6 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
         {
             entity.HasKey(t => t.Id);
             entity.Property(t => t.Name).HasMaxLength(256).IsRequired();
-            entity.Property(t => t.Kind).HasMaxLength(64).IsRequired();
             // Explicit DB-side default mirrors the CLR default in Template.cs.
             // Required for the additive Add_Template_ModelId migration: it
             // backfills pre-existing template rows with the canonical invoice

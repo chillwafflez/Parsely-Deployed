@@ -9,6 +9,7 @@ import { updateTemplate } from "@/lib/api-client";
 import { useAppShell } from "@/lib/app-shell-context";
 import { getDocumentTypeName } from "@/lib/document-types";
 import type { Template, UpdateTemplateRequest } from "@/lib/types";
+
 import {
   TemplateMetadataForm,
   type TemplateMetadataDraft,
@@ -123,10 +124,6 @@ export function TemplateEditStage({ template }: TemplateEditStageProps) {
     const payload: UpdateTemplateRequest = {
       name: trimmedName,
       description: emptyToNull(draft.metadata.description.trim()),
-      // The type label is intrinsic to the source document and isn't user-
-      // editable — pass the catalog-resolved name so the still-required
-      // backend field has a sensible value until 1D drops it entirely.
-      kind: typeLabel,
       vendorHint: emptyToNull(draft.metadata.vendorHint.trim()),
       rules: draft.rules
         .filter((r) => !r.removed)
@@ -174,7 +171,6 @@ export function TemplateEditStage({ template }: TemplateEditStageProps) {
     snapshot,
     submitting,
     template.id,
-    typeLabel,
   ]);
 
   return (

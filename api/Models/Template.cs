@@ -11,15 +11,6 @@ public class Template
     public string Name { get; set; } = string.Empty;
 
     /// <summary>
-    /// Free-text user label retained for backward compatibility while the
-    /// frontend still drives a "Kind" input. The canonical source of the
-    /// document type a template applies to is <see cref="ModelId"/>; this
-    /// column is scheduled for removal once the UI migrates (see Phase 1
-    /// rollout in PROJECT_CONTEXT.md).
-    /// </summary>
-    public string Kind { get; set; } = "Invoice";
-
-    /// <summary>
     /// Azure Document Intelligence prebuilt model the template applies to —
     /// e.g. <c>prebuilt-invoice</c>, <c>prebuilt-tax.us.w2</c>. Set on
     /// creation from the source document and treated as immutable thereafter

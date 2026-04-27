@@ -1,74 +1,233 @@
 import type { ExtractedField } from "./types";
 
-/** Groups shown in the Inspector, in display order. */
-export const FIELD_GROUPS = ["Document", "Parties", "Totals", "Line Items", "Custom"] as const;
-
-export type FieldGroup = (typeof FIELD_GROUPS)[number];
-
 /**
- * Maps a field to a display group. User-added fields always land in "Custom".
- * For AI-extracted fields we use substring heuristics against Azure DI's
- * prebuilt-invoice vocabulary:
+ * Per-model grouping definitions for the Inspector. Groups are dynamic
+ * strings (not a const union) so each prebuilt model can name its buckets
+ * however reads best for that document type.
  *
- *   Parties  → Vendor*, Customer*, *Address*, *Recipient*, BillTo*, ShipTo*, Remit*
- *   Totals   → *Total*, *Tax*, SubTotal, AmountDue, PreviousUnpaidBalance, Discount
- *   Line Items → exactly "Items"
- *   Document → everything else (InvoiceId, InvoiceDate, DueDate, PurchaseOrder,
- *              PaymentTerm, Service*Date, etc.)
+ * Adding a model means appending an entry to {@link GROUPINGS}; the rest of
+ * the Inspector resolves everything by `modelId`. Field name comparisons are
+ * case-insensitive — Azure DI is consistent, but it's cheap insurance.
  */
-export function inferFieldGroup(name: string, isUserAdded = false): FieldGroup {
-  if (isUserAdded) return "Custom";
 
-  const n = name.toLowerCase();
-
-  if (n === "items") return "Line Items";
-
-  // Address/recipient hits "Parties" before we look at other keywords so
-  // ServiceAddress/BillingAddress/ShippingAddress all land together.
-  if (n.includes("address") || n.includes("recipient")) return "Parties";
-
-  if (
-    n.startsWith("vendor") ||
-    n.startsWith("customer") ||
-    n.startsWith("billto") ||
-    n.startsWith("shipto") ||
-    n.startsWith("remit")
-  ) {
-    return "Parties";
-  }
-
-  if (
-    n.includes("total") ||
-    n.includes("tax") ||
-    n === "subtotal" ||
-    n === "amountdue" ||
-    n === "previousunpaidbalance" ||
-    n === "discount"
-  ) {
-    return "Totals";
-  }
-
-  return "Document";
+interface GroupRule {
+  group: string;
+  /** Matches if `fieldName` starts with one of these. Useful for flattened
+   *  Map fields like W-2's `Employer.Name` / `Employer.Address`. */
+  prefixes?: string[];
+  /** Matches if `fieldName` equals one of these. */
+  fields?: string[];
 }
 
-/** Groups fields into buckets keyed by group name, preserving order within each. */
+interface ModelGrouping {
+  /** Evaluated in order — first match wins. */
+  rules: GroupRule[];
+  /** Bucket for fields that match no rule and aren't user-added. */
+  fallback: string;
+  /** Display order for non-empty groups. Custom is appended automatically
+   *  when user-added fields are present. */
+  order: string[];
+}
+
+const USER_ADDED_GROUP = "Custom";
+
+const INVOICE_GROUPING: ModelGrouping = {
+  rules: [
+    { group: "Line Items", fields: ["Items"] },
+    {
+      group: "Parties",
+      prefixes: ["Vendor", "Customer", "BillTo", "ShipTo", "Remit"],
+      fields: [
+        "BillingAddress",
+        "BillingAddressRecipient",
+        "ShippingAddress",
+        "ShippingAddressRecipient",
+        "RemittanceAddress",
+        "RemittanceAddressRecipient",
+        "ServiceAddress",
+        "ServiceAddressRecipient",
+      ],
+    },
+    {
+      group: "Totals",
+      fields: [
+        "SubTotal",
+        "TotalTax",
+        "InvoiceTotal",
+        "AmountDue",
+        "PreviousUnpaidBalance",
+        "TotalDiscount",
+      ],
+    },
+  ],
+  fallback: "Document",
+  order: ["Document", "Parties", "Totals", "Line Items", USER_ADDED_GROUP],
+};
+
+const RECEIPT_GROUPING: ModelGrouping = {
+  rules: [
+    { group: "Line Items", fields: ["Items"] },
+    { group: "Merchant", prefixes: ["Merchant"] },
+    {
+      group: "Totals",
+      fields: ["Subtotal", "TotalTax", "Tip", "Total"],
+    },
+  ],
+  fallback: "Document",
+  order: ["Document", "Merchant", "Totals", "Line Items", USER_ADDED_GROUP],
+};
+
+const W2_GROUPING: ModelGrouping = {
+  rules: [
+    { group: "Employee", prefixes: ["Employee."] },
+    { group: "Employer", prefixes: ["Employer."] },
+    {
+      group: "Wages & Withholdings",
+      prefixes: [
+        "Wages",
+        "Federal",
+        "SocialSecurity",
+        "Medicare",
+        "Allocated",
+        "Dependent",
+        "NonQualified",
+        "Verification",
+      ],
+    },
+  ],
+  fallback: "Document",
+  order: [
+    "Document",
+    "Employee",
+    "Employer",
+    "Wages & Withholdings",
+    USER_ADDED_GROUP,
+  ],
+};
+
+const PAYSTUB_GROUPING: ModelGrouping = {
+  rules: [
+    { group: "Employee", prefixes: ["Employee"] },
+    { group: "Employer", prefixes: ["Employer"] },
+    {
+      group: "Earnings",
+      prefixes: ["Earnings", "Gross", "Net", "CurrentPeriod", "YearToDate"],
+      fields: ["Hours", "RegularHours", "OvertimeHours"],
+    },
+    {
+      group: "Deductions",
+      prefixes: ["Deduction", "Tax", "Withhold"],
+    },
+  ],
+  fallback: "Document",
+  order: [
+    "Document",
+    "Employer",
+    "Employee",
+    "Earnings",
+    "Deductions",
+    USER_ADDED_GROUP,
+  ],
+};
+
+const BANK_STATEMENT_GROUPING: ModelGrouping = {
+  rules: [
+    { group: "Transactions", prefixes: ["Transaction"] },
+    {
+      group: "Account",
+      prefixes: ["Account"],
+    },
+    { group: "Bank", prefixes: ["Bank"] },
+    {
+      group: "Balances",
+      prefixes: ["Beginning", "Ending"],
+      fields: [
+        "TotalDeposits",
+        "TotalWithdrawals",
+        "TotalServiceFees",
+      ],
+    },
+  ],
+  fallback: "Statement",
+  order: [
+    "Statement",
+    "Account",
+    "Bank",
+    "Balances",
+    "Transactions",
+    USER_ADDED_GROUP,
+  ],
+};
+
+const GROUPINGS: Record<string, ModelGrouping> = {
+  "prebuilt-invoice": INVOICE_GROUPING,
+  "prebuilt-receipt": RECEIPT_GROUPING,
+  "prebuilt-tax.us.w2": W2_GROUPING,
+  "prebuilt-paystub": PAYSTUB_GROUPING,
+  "prebuilt-bankStatement.us": BANK_STATEMENT_GROUPING,
+};
+
+/**
+ * Used when {@link GROUPINGS} has no entry for `modelId` (unknown prebuilt,
+ * future model added before its grouping was wired). Renders everything in a
+ * single "Fields" section so the UI stays usable.
+ */
+const GENERIC_GROUPING: ModelGrouping = {
+  rules: [],
+  fallback: "Fields",
+  order: ["Fields", USER_ADDED_GROUP],
+};
+
+function getGrouping(modelId: string): ModelGrouping {
+  return GROUPINGS[modelId] ?? GENERIC_GROUPING;
+}
+
+export function inferFieldGroup(
+  modelId: string,
+  fieldName: string,
+  isUserAdded = false
+): string {
+  if (isUserAdded) return USER_ADDED_GROUP;
+
+  const grouping = getGrouping(modelId);
+  const lower = fieldName.toLowerCase();
+
+  for (const rule of grouping.rules) {
+    if (rule.fields?.some((f) => f.toLowerCase() === lower)) return rule.group;
+    if (rule.prefixes?.some((p) => lower.startsWith(p.toLowerCase()))) {
+      return rule.group;
+    }
+  }
+
+  return grouping.fallback;
+}
+
+/**
+ * Buckets fields by inferred group, returning a Map in the model's display
+ * order. Empty buckets are dropped so the Inspector doesn't render headings
+ * with no rows. Buckets that aren't in the model's `order` (unknown groups
+ * produced by an unexpected field) are appended at the end.
+ */
 export function groupFields(
+  modelId: string,
   fields: ExtractedField[]
-): Map<FieldGroup, ExtractedField[]> {
-  const grouped = new Map<FieldGroup, ExtractedField[]>();
-  for (const group of FIELD_GROUPS) {
-    grouped.set(group, []);
+): Map<string, ExtractedField[]> {
+  const grouping = getGrouping(modelId);
+  const buckets = new Map<string, ExtractedField[]>();
+
+  for (const groupName of grouping.order) {
+    buckets.set(groupName, []);
   }
 
   for (const field of fields) {
-    const group = inferFieldGroup(field.name, field.isUserAdded);
-    grouped.get(group)!.push(field);
+    const group = inferFieldGroup(modelId, field.name, field.isUserAdded);
+    if (!buckets.has(group)) buckets.set(group, []);
+    buckets.get(group)!.push(field);
   }
 
-  // Drop empty groups so the Inspector doesn't render headers with no rows
-  for (const [group, list] of grouped) {
-    if (list.length === 0) grouped.delete(group);
+  for (const [group, list] of buckets) {
+    if (list.length === 0) buckets.delete(group);
   }
 
-  return grouped;
+  return buckets;
 }

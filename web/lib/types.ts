@@ -117,12 +117,6 @@ export interface FieldViewModel {
 export interface TemplateSummary {
   id: string;
   name: string;
-  /**
-   * Free-text legacy label retained while the API still returns it. Display
-   * surfaces should resolve the human-readable type from `modelId` via the
-   * catalog (`getDocumentTypeName`) — this field will be dropped in 1D.
-   */
-  kind: string;
   /** Azure DI prebuilt model id, e.g. `prebuilt-invoice`, `prebuilt-tax.us.w2`. */
   modelId: string;
   description: string | null;
@@ -137,8 +131,6 @@ export interface TemplateSummary {
 export interface Template {
   id: string;
   name: string;
-  /** See `TemplateSummary.kind`. */
-  kind: string;
   modelId: string;
   description: string | null;
   applyTo: TemplateApplyTo;
@@ -193,7 +185,6 @@ export interface RuleOverride {
 /** POST body for creating a template from a source document. */
 export interface CreateTemplatePayload {
   name: string;
-  kind: string;
   description: string | null;
   applyTo: TemplateApplyTo;
   sourceDocumentId: string;
@@ -208,7 +199,6 @@ export interface CreateTemplatePayload {
 export interface UpdateTemplateRequest {
   name: string;
   description: string | null;
-  kind: string;
   vendorHint: string | null;
   rules: UpdateTemplateRuleRequest[];
 }
@@ -227,11 +217,14 @@ export interface UpdateTemplateRuleRequest {
  * and accepted by `POST /api/templates/import`. Intentionally omits all
  * server-generated ids and any source-document reference so the payload is
  * safe to share between users and databases.
+ *
+ * V2 (current) replaces V1's `kind` field with `modelId`. V1 files are
+ * rejected on import — re-export from the source.
  */
 export interface TemplateExportPayload {
   version: number;
   name: string;
-  kind: string;
+  modelId: string;
   description: string | null;
   applyTo: TemplateApplyTo;
   vendorHint: string | null;

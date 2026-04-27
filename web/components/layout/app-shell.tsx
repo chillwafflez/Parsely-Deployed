@@ -8,6 +8,7 @@ import { Toast } from "../ui/toast";
 import { AppShellContext, type ToastTone } from "@/lib/app-shell-context";
 import { useTemplates } from "@/lib/hooks/use-templates";
 import { useDocumentTypes } from "@/lib/hooks/use-document-types";
+import { getDocumentTypeName } from "@/lib/document-types";
 import type { DocumentResponse } from "@/lib/types";
 
 const TOAST_MS = 2400;
@@ -93,11 +94,19 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     ]
   );
 
+  // Resolve the active document's type label so the topbar can render it as
+  // a badge — if the catalog hasn't loaded yet, getDocumentTypeName falls
+  // back to the raw modelId, which still keeps the UI useful.
+  const activeDocumentTypeName = activeDocument
+    ? getDocumentTypeName(documentTypes, activeDocument.modelId)
+    : null;
+
   return (
     <AppShellContext.Provider value={contextValue}>
       <div className="grid grid-rows-[56px_1fr] h-screen">
         <Topbar
           documentName={activeDocument?.fileName}
+          documentTypeName={activeDocumentTypeName}
           templateName={activeDocument?.templateName ?? null}
         />
         <div className="grid grid-cols-[272px_1fr] min-h-0">

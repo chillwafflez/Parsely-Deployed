@@ -59,14 +59,13 @@ interface SaveTemplateModalProps {
   fields: ExtractedField[];
   /** Suggested name (e.g., vendor-derived) shown as the default. */
   suggestedName: string;
-  /** Source document's Azure DI model id; drives the type label + payload kind. */
+  /** Source document's Azure DI model id; resolved to a display label via the catalog. */
   modelId: string;
   /** Catalog used to resolve the type label; passed in from app-shell context. */
   documentTypes: DocumentTypeOption[];
   onCancel: () => void;
   onSubmit: (draft: {
     name: string;
-    kind: string;
     description: string;
     applyTo: TemplateApplyTo;
     ruleOverrides?: Record<string, RuleOverride>;
@@ -82,8 +81,7 @@ export function SaveTemplateModal({
   onSubmit,
 }: SaveTemplateModalProps) {
   // Type label is implicit from the source document — the user can't pick a
-  // different kind here. Carried into the submit payload as `kind` until the
-  // backend contract drops the field in 1D.
+  // different kind here. Shown as a header badge for orientation.
   const typeName = React.useMemo(
     () => getDocumentTypeName(documentTypes, modelId),
     [documentTypes, modelId]
@@ -160,7 +158,6 @@ export function SaveTemplateModal({
     try {
       await onSubmit({
         name: name.trim(),
-        kind: typeName,
         description: description.trim(),
         applyTo,
         ruleOverrides: buildRuleOverrides(),
