@@ -110,6 +110,18 @@ PROJECT_CONTEXT.md §13 / Day 13 Part A).
 **Estimated effort:** ~3 days.
 
 ---
+### #3.1 Additional Table Extraction features
+**Goal:** In addition to extracting tables from documents, allow the user to draw
+bounding boxes to extract future tables (for the template feature). Another nice
+quality-of-life feature could be to allow the user to highlight a column of a table
+to apply automatic calculations (e.g. "sum all values in this column and output to a 
+field called 'Balance Sum,'" or "get average of values in this column", etc.). 
+
+**Frontend sketch:**
+- Will need to thoroughly plan out the UI for these table features so that 
+the page will not feel cluttered or unintuitive
+---
+
 
 ### #4 AI transformation rules
 
