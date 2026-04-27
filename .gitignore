@@ -33,6 +33,9 @@ samples/
 Document Parsing Service Prototype-handoff
 parsley-upload-page
 
+# Mock UI
+ui-mocks
+
 # OS
 Thumbs.db
 .DS_Store
