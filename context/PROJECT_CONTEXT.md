@@ -594,6 +594,53 @@ Continuation of the Day 14 morning deployment-planning session. Moved from archi
 
 **Verified:** `dotnet build` clean (0/0), all Phase-1 smoke tests passing locally, image confirmed in ACR with verified digest.
 
+### Day 15 ✅ — Phase 2 + 3 deployment execution + dedicated SQL server *(2026-04-26)*
+
+Materialized the deploy plan into running infrastructure. ACA + Vercel both live; full upload pipeline working end-to-end against production resources. **No application code changes** — entirely Azure + Vercel + Git config work. Tasks tracked across two threads (SQL migration + Vercel deploy) totaling 13 completed sub-steps.
+
+**Phase 2 step 7 — Container App created**
+
+Hit a wall pasting the §11 pre-drafted multi-line `az containerapp create` command into PowerShell 5.1: native command argument passing strips inner quotes when the arg crosses the `cmd.exe` boundary, so embedded spaces in the SQL connection string (`Initial Catalog`, `Persist Security Info`, `User ID`, etc.) split it into ~10 separate args, breaking `--secrets` parsing. Upgraded to PowerShell 7 + `$PSNativeCommandArgumentPassing = 'Standard'` mid-session — same error symptom continued (variables don't survive a shell switch, plus the SQL conn string ended up with values that still confused parsing).
+
+Final working approach (the **hybrid CLI + portal pattern**):
+1. CLI `az containerapp create` with image, ingress, registry creds only — **no** `--secrets`, **no** `--env-vars`
+2. Portal Container App → Settings → Secrets → added all 5 secrets (`sql-conn`, `blob-conn`, `di-key`, `speech-key`, `openai-key`) via UI — bypasses every PowerShell quoting issue
+3. CLI `az containerapp update --set-env-vars` for the 11 env vars (env-var values have no spaces, CLI handles cleanly)
+
+Result: `docparsing-api` Container App live in `taia-commission-env`. First cold start crashed in `Migrate()` though — SQL firewall rejected ACA's outbound IP.
+
+**SQL provisioning swap (mid-session decision)**
+
+Realized the original §13.4 plan had the right instinct (dedicated server, not piggybacking on shared `taia-ams-sql`). Created a fresh dedicated server:
+- **Server `docparsing-sql`.** East US blocked by subscription policy → fell back to **West US** (vs. shared server's West US 2). Same ~50–80 ms cross-region overhead from East US compute, but blast-radius isolation gained — schema experiments + audit signals stay separate from other org workloads.
+- **Database `docparsing-db`** on `docparsing-sql` — GP Serverless, Gen5, 1 vCore, 60-min auto-pause (same SKU as the orphaned db).
+- **Firewall:** only the "Allow Azure services" toggle showed in the portal create wizard (vs. earlier two-checkbox UI). Added the client-IP rule post-create via Networking page for local dev.
+- **Local dev:** `dotnet user-secrets set "ConnectionStrings:Default" ...` to point at the new server. `dotnet run` exercised `Migrate()` against the empty new DB cleanly.
+- **ACA secret swap:** edited `sql-conn` value via portal, bumped revision via `az containerapp update --revision-suffix sqlswap`. New revision came up healthy.
+- **Smoke test:** `GET /api/documents` → 200 [] (confirms ACA → SQL → EF Core round-trip), `POST /api/documents/upload` → JSON with extracted fields (confirms Blob + DI also wired).
+- **Cleanup:** dropped orphaned `docparsing-db` from `taia-ams-sql` (lead OK'd) — old server back to its pre-Day-14 state.
+
+**Phase 3 step 9 — Vercel deploy + frontend**
+
+- **GitHub mirror.** Harness Code (`origin`) doesn't integrate with Vercel; only GitHub/GitLab/Bitbucket do. Created a private GitHub repo, added as second remote (`github`), pushed `main`. Future workflow: `git push origin main && git push github main` until a Harness pipeline step automates the mirror.
+- **Vercel project import.** Auto-detected Next.js framework once Root Directory was set to `web`. Install Command auto-resolved `pnpm install` from `pnpm-lock.yaml`; `web/.npmrc` `public-hoist-pattern[]=*pdfjs-dist*` was respected.
+- **Env var: `NEXT_PUBLIC_API_BASE_URL`** (note: `_BASE_URL`, NOT `_URL` — the original §13.6 step 9 had this wrong; `web/lib/api-client.ts:19` reads `NEXT_PUBLIC_API_BASE_URL`). Set to the ACA FQDN, applied to all three environments (production, preview, development). `NEXT_PUBLIC_*` vars are inlined at build time, so changing the value requires a redeploy.
+- **First deploy:** ~2 min build, clean. pnpm + react-pdf 9.x + pdfjs-dist 4.x + Tailwind v4 + the existing 7 routes all worked first try with zero config beyond Root Directory and the env var.
+- **CORS error on first browser test (expected).** ACA was still allowing only `http://localhost:3000`. Fixed via `az containerapp update --set-env-vars "Cors__AllowedOrigins__1=https://<vercel-prod-domain>" "Cors__AllowedOrigins__2=https://*-<team>.vercel.app"`. Wildcard preview-deploy origin works because `Program.cs` has `SetIsOriginAllowedToAllowWildcardSubdomains()` enabled.
+- **End-to-end browser test:** drop a PDF on the live Vercel URL → Azure DI extracts fields → Inspector renders bboxes + values → field saved to SQL → reloaded the Documents page and the entry persists. Full pipeline through live infrastructure works.
+
+**Vercel deploy hook (Phase 3 step 10 prep)**
+
+Vercel → Settings → Git → Deploy Hooks → created `harness-main-deploy` for the `main` branch. URL saved locally for Harness CD stage; Vercel won't display it again.
+
+**Cosmetic warning observed (deferred):** "The resource ...css was preloaded using link preload but not used within a few seconds from the window's load event." Origin is Next.js framework-level CSS chunk preloading — App Router emits `<link rel="preload">` tags from the routing manifest; if a route's CSS chunk doesn't get matched to a served stylesheet within ~3 sec of `load`, Chrome flags it. No functional impact, no Core Web Vitals impact, no fix that doesn't break on Next.js minor upgrades. Defer indefinitely.
+
+**Resources provisioned:** SQL Server `docparsing-sql` (West US), SQL DB `docparsing-db` on it, Container App `docparsing-api` in `taia-commission-env`, Vercel project, private GitHub repo mirror, Vercel deploy hook for `main`.
+
+**Resources removed:** orphaned SQL DB `docparsing-db` from `taia-ams-sql`.
+
+**Verified:** ACA revision running healthy, live Vercel URL passes upload + extract + persist end-to-end, all 11 ACA env vars + 5 secrets wired correctly, GitHub repo has full `main` history mirrored.
+
 ---
 
 ## 6. What's next — runway
@@ -724,7 +771,17 @@ Demo is **2026-05-29** (~5 weeks out as of 2026-04-23 — user extended the orig
 
 **`dotnet ef` needs the tool manifest at `.config/dotnet-tools.json`.** Some SDK versions create it at the bare cwd as `dotnet-tools.json` instead of under `.config/`. Move to convention path; verify with `dotnet tool restore && dotnet ef --version`.
 
-**Cross-region database adds 50–80 ms per query.** Our SQL is on `taia-ams-sql` in West US 2 (existing org server); ACA + Blob + DI are in East US. For prototype demo with low query volume this is fine, but pages that fan out multiple SQL queries (Inspector load, document list, template list) compound the latency. Phase 2 cleanup if needed: provision a new SQL server in East US.
+**Cross-region database adds 50–80 ms per query.** Our SQL is on `docparsing-sql` in **West US**; ACA + Blob + DI are in East US. East US was blocked by subscription policy (Day 15) so West US was the closest available region. For prototype demo with low query volume this is fine, but pages that fan out multiple SQL queries (Inspector load, document list, template list) compound the latency. Phase 2 cleanup if needed: file a subscription policy exemption for East US SQL and migrate.
+
+**`NEXT_PUBLIC_API_BASE_URL` is the env-var name** — note `_BASE_URL`, NOT `_URL`. Read in `web/lib/api-client.ts:19` with a fallback to `http://localhost:5180`. Earlier doc references to `NEXT_PUBLIC_API_URL` were wrong. Vercel inlines `NEXT_PUBLIC_*` vars at build time, so changing the value on Vercel requires a redeploy to take effect.
+
+**Vercel only integrates with GitHub / GitLab / Bitbucket** — not Harness Code. Workflow established Day 15: keep Harness Code as `origin`, add a private GitHub repo as a second remote (`github`), and push to both. Until a Harness pipeline step automates the mirror, manually `git push origin main && git push github main` after each commit.
+
+**Windows PowerShell 5.1 mangles `az` arguments containing spaces.** Symptom: `az containerapp create --secrets "sql-conn=$sqlConn"` silently splits the SQL connection string on the spaces in `Initial Catalog`, `Persist Security Info`, etc., losing inner quotes through the `cmd.exe` boundary. Result: `az` rejects the malformed secret with a generic `<key>=<value>` format error. Fixes: (a) upgrade to PowerShell 7.3+ and set `$PSNativeCommandArgumentPassing = 'Standard'` for the session, OR (b) — what we ended up doing — set the 5 ACA secrets via the **portal Settings → Secrets UI** and only use CLI for env vars (which contain no spaces). The hybrid CLI+portal approach is now the established pattern.
+
+**Subscription region policies can block SQL Server creation.** `taia-ams-sql` is in West US 2 (created before today's user); user's subscription blocked East US for new SQL servers on Day 15, forcing `docparsing-sql` to West US. Always try-create or check with the lead before assuming co-location with ACA / DI / Blob.
+
+**Cosmetic CSS preload warning is Next.js framework-level, not an app bug.** Chrome warns "resource was preloaded using link preload but not used within a few seconds" for some CSS chunks in App Router builds — Next.js emits `<link rel="preload">` from its routing manifest, and Chrome flags chunks not matched to served stylesheets within ~3 sec of `load`. No functional impact, no Core Web Vitals hit. Don't try to suppress it; the workarounds break on Next.js minor upgrades.
 
 **`Migrate()` on startup is OK for our prototype, NOT for production scale.** Microsoft's official guidance flags `db.Database.Migrate()` at app startup as risky at scale (concurrent migration apply on multi-replica deploys, slow startup, failed-migration crash loop). For our single-replica scale-to-zero ACA prototype it's acceptable. Phase 2 should switch to `dotnet ef migrations bundle --self-contained` and apply via a CI/CD pre-step before swapping container revisions. Already commented as `// TODO (Phase 2)` in `Program.cs`.
 
@@ -800,67 +857,32 @@ The UI draws 1:1 from the Claude Design mock exported to `Document Parsing Servi
 
 ## 11. Where we left off
 
-**2026-04-24 end of session (Day 14 — afternoon, deployment Phase 1 + ACR push):**
+**2026-04-26 end of session (Day 15 — Phase 2 + 3 deployment execution):**
 
-- Days 1–13 feature work complete and committed to `main`. Demo date still **2026-05-29**; ample runway, no schedule pressure.
-- **Phase 1 of deployment shipped** (SQL Server provider swap + EF migrations, Azure Blob Storage swap, Dockerfile + `.dockerignore`, production CORS) — see Day 14 entry in §5 for full detail.
-- **Phase 2 step 6 done**: bootstrap image `docparsing-api:bootstrap` pushed to ACR with verified digest `sha256:437f0e38…`.
-- **Phase 2 step 7 (Container App create) is the immediate pickup point** — pre-drafted command below.
-- §13.4 table refreshed with verified resource names (storage account `docparsingstoragetaia`, SQL on shared `taia-ams-sql` in West US 2, ACR DNL hostname). §7 Deployment subsection added with the gotchas surfaced this session.
+- Days 1–13 feature work complete and committed to `main`. Demo date still **2026-05-29**; ~5 weeks runway.
+- **Phase 1 of deployment committed** Day 14 (commits `c9a1c73`, `63c0fa5`, `9f0817a`).
+- **Phase 2 done end-to-end Day 15.** Container App `docparsing-api` is live in `taia-commission-env`, healthy, serving traffic. Hybrid CLI + portal pattern was the working approach (CLI for create, portal Settings → Secrets for the 5 secrets, CLI for the 11 env vars). Smoke tests passed: `GET /api/documents` → 200 [], `POST /api/documents/upload` → extracted-fields JSON.
+- **SQL provisioning swapped Day 15.** Original §13.4 plan was right after all: dedicated `docparsing-sql` server (West US — East US blocked by subscription policy), `docparsing-db` migrated cleanly via ACA `Migrate()`. Orphaned `docparsing-db` dropped from shared `taia-ams-sql`. Live ACA + local dev both pointed at the new server.
+- **Phase 3 step 9 done Day 15.** Vercel project deployed via private GitHub mirror (Vercel doesn't integrate with Harness Code). Browser-tested end-to-end: live Vercel URL → upload PDF → DI extracts fields → SQL persists → reload shows entry. Vercel deploy hook for `main` branch created and saved locally for Phase 3 step 10.
+- **Next pickup is Phase 3 step 10**: Harness pipeline YAML (CI: `BuildAndPushToACR`; CD: `az containerapp update --image` + `curl POST <vercel-deploy-hook>`). See §13.6 step 10 for prerequisites + Harness secrets needed.
 - **Day 9 Tailwind migration still partial** — `document/bounding-box-overlay`, both `inspector/*` files, and `app/page.module.css` remain on CSS Modules. Untouched this session.
 
 ### Current git state
 
-- Working tree dirty — Day 14 deployment Phase 1 changes uncommitted at session end.
-- Suggested commit grouping (3 logical units, all shipped this session):
-  - `feat(api): migrate from SQLite to SQL Server (LocalDB local, Azure SQL prod)`
-  - `feat(api): replace local file storage with Azure Blob Storage`
-  - `feat(api): containerize + production CORS`
+- Working tree clean. No application code changes Day 15 — entirely Azure + Vercel + Git config work, nothing to commit.
+- New remote `github` added Day 15 alongside existing `origin` (Harness Code). Future workflow: `git push origin main && git push github main` until Harness pipeline automates the mirror.
 
 ### First actions for the next session
 
-1. **Commit the Phase 1 deployment work** (3 suggested commits above). User runs commits themselves.
-2. **Run the pre-drafted `az containerapp create` command** to materialize the Container App. Swap the 6 `<…>` placeholders in your terminal — **none of those values should land in chat / commits / docs**:
-   ```bash
-   az containerapp create \
-     --name docparsing-api \
-     --resource-group cr-rg-prod-taia \
-     --environment taia-commission-env \
-     --image docparsingacr-eud7hcanetfxe4ae.azurecr.io/docparsing-api:bootstrap \
-     --registry-server docparsingacr-eud7hcanetfxe4ae.azurecr.io \
-     --registry-username docparsingacr \
-     --registry-password '<ACR_ADMIN_PASSWORD>' \
-     --target-port 8080 \
-     --ingress external \
-     --min-replicas 0 \
-     --max-replicas 1 \
-     --secrets \
-       "sql-conn=<SQL_CONNECTION_STRING>" \
-       "blob-conn=<BLOB_CONNECTION_STRING>" \
-       "di-key=<DOCAI_KEY>" \
-       "speech-key=<SPEECH_KEY>" \
-       "openai-key=<OPENAI_KEY>" \
-     --env-vars \
-       "ASPNETCORE_ENVIRONMENT=Production" \
-       "ConnectionStrings__Default=secretref:sql-conn" \
-       "ConnectionStrings__BlobStorage=secretref:blob-conn" \
-       "BlobStorage__ContainerName=uploads" \
-       "DocumentIntelligence__Endpoint=https://taia-ams-docai.cognitiveservices.azure.com/" \
-       "DocumentIntelligence__Key=secretref:di-key" \
-       "Speech__Key=secretref:speech-key" \
-       "Speech__Region=eastus" \
-       "OpenAI__Key=secretref:openai-key" \
-       "OpenAI__Model=gpt-4o-mini" \
-       "Cors__AllowedOrigins__0=http://localhost:3000"
-   ```
-   Placeholder retrieval (run in terminal, never chat):
-   - ACR password: `az acr credential show -n docparsingacr --query passwords[0].value -o tsv`
-   - SQL conn: Azure portal → `taia-ams-sql` → Connection strings → ADO.NET (**different value from local LocalDB user-secret** — see §7 Deployment).
-   - Blob conn: from local `dotnet user-secrets list` (`ConnectionStrings:BlobStorage`) — same value works since dev uses real Azure Blob.
-   - DI / Speech / OpenAI keys: same as local user-secrets values.
-3. **Smoke-test the ACA URL with `curl`** (Phase 2 step 8). Hit the FQDN ACA assigns post-create (something like `https://docparsing-api.<random>.<region>.azurecontainerapps.io`); confirm `GET /api/documents` returns `200 []` (empty list, expected on a fresh DB). Then `curl -F file=@samples/sample-invoice.pdf https://<fqdn>/api/documents/upload` and verify the response contains extracted fields.
-4. **After smoke-test passes**: pull the FQDN into the Vercel setup (Phase 3 step 9) and add the Vercel prod domain to `Cors__AllowedOrigins__1` via `az containerapp update`.
-5. **`use context7`** for any Tailwind v4 / Next.js 15 / React 19 / pdf-lib / pdfjs-dist / Azure CLI uncertainty.
+1. **Use context7 against Harness docs** for current pipeline YAML schema (the format shifts version-to-version). Specifically: `BuildAndPushToACR` step parameters, secret references syntax, multi-stage pipeline structure.
+2. **Confirm Azure service principal availability.** The CD stage's `az containerapp update` needs SP credentials (clientID + clientSecret + tenantID) with at least Contributor on `cr-rg-prod-taia`. If user doesn't have RBAC owner perms, lead must create the SP. Same permissions story as the ACA env on Day 14.
+3. **Set up Harness secrets:**
+   - ACR admin password (`az acr credential show -n docparsingacr --query passwords[0].value -o tsv`)
+   - Azure SP credentials (3 values)
+   - Vercel deploy hook URL (saved locally end of Day 15)
+4. **Draft pipeline YAML** with CI stage (BuildAndPushToACR) + CD stage (two Run steps for ACA swap + Vercel hook). Reference image tag should be `${pipeline.sequenceId}` for traceable versions, replacing the Day-14 `:bootstrap` snapshot tag.
+5. **Trivial test push** once pipeline lands — bump a comment somewhere, push to both `origin` and `github`, watch full CI → CD → live-app-update flow.
+6. **`use context7`** for any Harness / Tailwind v4 / Next.js 15 / React 19 / pdf-lib / Azure CLI uncertainty.
 
 ### Patterns established this session (Day 14 — reuse, don't reinvent)
 
@@ -973,15 +995,15 @@ _Refreshed Day 14 against `az resource list` reality. Several names differ from 
 |---|---|---|---|
 | Resource group | `cr-rg-prod-taia` | ✅ In use | All deployment resources except `taia-env` ACA env. East US. |
 | Azure Container Registry | `docparsingacr`, login server `docparsingacr-eud7hcanetfxe4ae.azurecr.io` | ✅ Created + image pushed | Basic SKU, **admin credentials enabled**, **Tenant Reuse** DNL scope (the random suffix in the login server hostname comes from this scope). Bootstrap image `docparsing-api:bootstrap` pushed Day 14, digest `sha256:437f0e38…`. |
-| Azure SQL Server | `taia-ams-sql` (existing org server) | ✅ Reused | SQL auth, admin user `sqladmin`. **West US 2** — cross-region from East US compute (~50–80 ms/query). Acceptable for prototype. (Original deploy plan said `docparsing-sql` East US — that was wishful; the actual setup reuses the existing org server.) |
-| Azure SQL Database | `docparsing-db` (on `taia-ams-sql`) | ✅ Created + migrated | GP Serverless, Gen5, 1 vCore, 60-min auto-pause. EF `Initial` migration applied locally to LocalDB; the same migration will apply to `docparsing-db` on first ACA startup via `Migrate()`. Firewall: **Allow Azure services = Yes** + client IP. |
+| Azure SQL Server | `docparsing-sql` (dedicated, created Day 15) | ✅ Created | SQL auth, admin user `sqladmin`. **West US** — East US was blocked by subscription policy on Day 15, fell back to West US. Still cross-region from East US compute (~50–80 ms/query); acceptable for prototype. Replaces the Day-14 reuse of shared `taia-ams-sql` (orphaned db dropped Day 15). |
+| Azure SQL Database | `docparsing-db` (on `docparsing-sql`) | ✅ Created + migrated | GP Serverless, Gen5, 1 vCore, 60-min auto-pause. EF `Initial` migration applied automatically by ACA `Migrate()` on first cold start against the empty DB. Firewall: **Allow Azure services = Yes** (set during create) + client-IP rule (added post-create for local dev). |
 | Blob Storage Account | `docparsingstoragetaia` | ✅ Created + in use | Standard LRS, StorageV2, East US. The `taia` suffix was added at provisioning time for global uniqueness. (Original deploy plan said `docparsingstorage`.) |
 | Blob Container | `uploads` | ✅ Created + in use | Private. Connection string in local `ConnectionStrings:BlobStorage` user-secret. Day-14 Blob Storage swap uses real Azure in dev (not Azurite). |
 | Container Apps Environment | `taia-commission-env` (in `cr-rg-prod-taia`, East US) | ✅ Chosen | Selected over `taia-env` (in `taia-rg`) for same-RG colocation with ACR / Storage / DI / Speech. Both envs were already provisioned by lead. |
-| Container App | `docparsing-api` | ⏳ Pending create | Day-14-morning failed/deleted attempt with placeholder image is moot now that the real image is in ACR. Pre-drafted `az containerapp create` command lives in §11 / §13.6. |
+| Container App | `docparsing-api` | ✅ Deployed | Created Day 15 via hybrid CLI + portal pattern: `az containerapp create` for the shell (image, ingress, registry creds), portal **Settings → Secrets** for the 5 secrets (avoids PowerShell quoting bug with SQL conn string spaces — see §7), `az containerapp update --set-env-vars` for the 11 env vars. FQDN retrievable via `az containerapp show --name docparsing-api --resource-group cr-rg-prod-taia --query "properties.configuration.ingress.fqdn" -o tsv`. |
 | Azure Document Intelligence | `taia-ams-docai` | ✅ In use | Existing org resource. Endpoint `https://taia-ams-docai.cognitiveservices.azure.com/`, East US. |
 | Azure Speech | `taia-ams-speech` | ✅ In use | Existing org resource, East US. Used by Voice-Fill feature. |
-| Vercel project | — | ⏳ Pending | Connect repo, set `NEXT_PUBLIC_API_URL` to ACA app URL, grab deploy hook URL. Phase 3. |
+| Vercel project | `parsely` (private GitHub repo as source) | ✅ Deployed | Day 15 via GitHub mirror (Harness Code doesn't integrate with Vercel). Root Directory `web/`, Framework Next.js (auto), env var `NEXT_PUBLIC_API_BASE_URL` (note `_BASE_URL`, not `_URL`) → ACA FQDN, applied to all three Vercel envs. Deploy hook `harness-main-deploy` for `main` branch created (URL saved locally for Phase 3 step 10). |
 
 ### 13.5. Portal gotchas encountered (2026-04-24)
 
@@ -992,6 +1014,17 @@ _Refreshed Day 14 against `az resource list` reality. Several names differ from 
 - **Container App create with a placeholder image failed to deploy** — Day-14-morning attempt. Worked around by: (1) building the real API image (Phase 1 steps 1–5), (2) pushing to ACR as `:bootstrap` (Day 14 afternoon), (3) using the real image when re-creating via CLI (Phase 2 step 7, next session).
 - **ACR DNL hostname is not the simple `<name>.azurecr.io`.** With Tenant Reuse scope, the actual login server has a random suffix (ours: `docparsingacr-eud7hcanetfxe4ae.azurecr.io`). Always use `az acr show -n <name> --query loginServer -o tsv` for the canonical value. Discovered Day 14 — would have broken `docker push` if used the simple form.
 - **`az resource list` is the source of truth, not the deploy plan.** Day 14's discovery surfaced three name discrepancies (storage account, SQL server, ACR login server) and two existing ACA envs to pick from. Always cross-check provisioning intentions against actual resource state before constructing CLI commands.
+
+### 13.5b. Portal + CLI gotchas encountered (Day 15, 2026-04-26)
+
+- **Windows PowerShell 5.1 broke `az containerapp create --secrets` for any value with spaces.** SQL ADO.NET connection strings contain `Initial Catalog=...`, `Persist Security Info=...`, `User ID=...`, etc., all with literal spaces. PS 5.1's native command argument-passing strips inner quotes through the `cmd.exe` boundary, so `az` saw the connection string as ~10 separate args and bailed. Upgrading to pwsh 7 + `$PSNativeCommandArgumentPassing = 'Standard'` should fix it but didn't reliably (variables didn't survive shell switch in our session). **Permanent workaround: hybrid CLI + portal pattern.** CLI for create + env-vars; portal Settings → Secrets for the secret values themselves.
+- **SQL Server creation in East US blocked by subscription policy.** Even though `cr-rg-prod-taia` is in East US, our subscription declined East US for new SQL Server resources. Fallback: West US (closest available). Always try a small `az sql server create --location eastus` or check via the portal create wizard before assuming co-location is possible.
+- **SQL Networking tab in the create wizard sometimes shows only the "Allow Azure services" toggle, not the client-IP checkbox.** UI version skew. Add the client-IP firewall rule post-create via Server → Security → Networking → Firewall rules → "Add your client IPv4 address". One-off click, ~30 sec to propagate.
+- **First ACA cold start crashed in `Migrate()` because SQL firewall hadn't been opened to Azure services.** EF Core stack trace tail showed `Routing Destination: <node>.westus2-a.worker.database.windows.net` followed by connection refusal. The fix is enabling **Allow Azure services = Yes** on the SQL server. ACA outbound IPs are unpredictable (shared, scale-to-zero) so this toggle is mandatory; can't be replaced with a specific IP allowlist.
+- **Vercel needs GitHub (or GitLab/Bitbucket) — Harness Code isn't supported.** Manual mirror via `git remote add github <url>` + dual-push pattern. Until automated, every commit needs both `git push origin main` and `git push github main`.
+- **Vercel auto-detects pnpm + Next.js + monorepo correctly** with one config: set Root Directory to `web/`. Install Command, framework, and `.npmrc` hoist for `pdfjs-dist` are all handled automatically.
+- **`NEXT_PUBLIC_*` env vars are inlined at build time on Vercel.** Setting `NEXT_PUBLIC_API_BASE_URL` requires a redeploy to take effect — there's no runtime override path. The "Redeploy" button on the latest deployment in Vercel's UI is the easiest trigger.
+- **First Vercel deploy + browser test fails on CORS** because ACA's `Cors__AllowedOrigins__0` is still `http://localhost:3000`. Fix is `az containerapp update --set-env-vars` adding `__1=https://<vercel-prod>` and optionally `__2=https://*-<team>.vercel.app` for preview branches. Wildcard preview deploys work because `Program.cs` calls `SetIsOriginAllowedToAllowWildcardSubdomains()`.
 
 ### 13.6. Remaining work (prioritized for the next session)
 
@@ -1004,7 +1037,7 @@ _Refreshed Day 14 against `az resource list` reality. Several names differ from 
 
 6. ✅ **Bootstrap push to ACR.** Done Day 14. Image `docparsing-api:bootstrap` in `docparsingacr-eud7hcanetfxe4ae.azurecr.io`, digest `sha256:437f0e38…`.
 
-7. ⏳ **Create Container App via CLI** — immediate next step. Pre-drafted command (also in §11):
+7. ✅ **Create Container App.** Done Day 15. Hybrid CLI + portal pattern (see §5 Day 15 entry + §13.5b for why). The pre-drafted command below is preserved as a reference snippet for the all-CLI approach if PowerShell quoting ever gets sorted out — but **don't try this verbatim again**; use the hybrid pattern instead.
    ```bash
    az containerapp create \
      --name docparsing-api \
@@ -1039,18 +1072,15 @@ _Refreshed Day 14 against `az resource list` reality. Several names differ from 
    ```
    Placeholder retrieval guidance is in §11. **None of those secret values should land in chat / commits / docs** — only in the local terminal.
 
-8. **End-to-end smoke test** — once step 7 succeeds, ACA returns an FQDN like `https://docparsing-api.<random>.<region>.azurecontainerapps.io`. Verify:
-   - `curl https://<fqdn>/api/documents` returns `200 []` (empty list, expected on a fresh DB).
-   - `Migrate()` ran on first startup — confirm by re-listing documents (no errors) or by checking `docparsing-db` tables exist.
-   - `curl -F file=@samples/sample-invoice.pdf https://<fqdn>/api/documents/upload` returns extracted fields (full Blob + DI round-trip exercised).
+8. ✅ **End-to-end smoke test.** Done Day 15 (after the SQL firewall fix + dedicated-server swap). `GET /api/documents` → `200 []`, `POST /api/documents/upload` → JSON with extracted fields, `Migrate()` confirmed run on first cold start (tables present in `docparsing-db`).
 
 **Phase 3 — Frontend + pipeline:**
 
-9. **Create Vercel project** — import repo (mirror to GitHub if needed), set `NEXT_PUBLIC_API_URL` to the ACA FQDN from step 8, grab deploy hook URL. Add the Vercel prod domain to ACA's `Cors__AllowedOrigins__1` (and preview wildcard to `__2` if desired) via `az containerapp update --replace-env-vars …`.
+9. ✅ **Vercel project created.** Done Day 15. Mirrored to private GitHub repo (Vercel doesn't integrate with Harness Code), Root Directory `web/`, env var **`NEXT_PUBLIC_API_BASE_URL`** (correcting the original `NEXT_PUBLIC_API_URL` typo) → ACA FQDN, applied to all three Vercel envs. Deploy hook `harness-main-deploy` for `main` branch created — URL saved locally for step 10. ACA CORS updated with prod domain at `__1` and preview wildcard at `__2`.
 
-10. **Harness pipeline YAML** — CI stage: `BuildAndPushToACR` step targeting `docparsingacr-eud7hcanetfxe4ae.azurecr.io/docparsing-api:$BUILD_NUMBER`. CD stage: `Run: az containerapp update --image …` and `Run: curl -X POST $VERCEL_DEPLOY_HOOK`. Harness secrets: ACR creds, Azure service principal for `az`, Vercel deploy hook URL.
+10. ⏳ **Harness pipeline YAML — CI + CD stages.** Immediate pickup point. CI stage: `BuildAndPushToACR` step targeting `docparsingacr-eud7hcanetfxe4ae.azurecr.io/docparsing-api:${pipeline.sequenceId}` (versioned tag — replaces the Day-14 `:bootstrap` snapshot). CD stage: two `Run` steps — `az login --service-principal ...` + `az containerapp update --image ...` for the backend swap, then `curl -X POST $VERCEL_DEPLOY_HOOK_URL` for the frontend redeploy. Harness secrets to set up first: ACR admin creds, Azure service principal client-ID/client-secret/tenant-ID (lead may need to create the SP if user lacks RBAC owner perms on `cr-rg-prod-taia`), Vercel deploy hook URL. Use context7 against Harness docs for current YAML schema before drafting.
 
-11. **Smoke test from a clean push to `main`** — push a trivial change, watch pipeline build + deploy, verify the live app reflects the change.
+11. **End-to-end clean push test.** Push a trivial change to `main` (and to the GitHub mirror), watch pipeline build + push to ACR, ACA revision swap, Vercel rebuild, verify the live app reflects the change.
 
 ### 13.7. Anti-patterns to avoid during deployment
 
@@ -1080,4 +1110,4 @@ Rough monthly, idle-heavy prototype usage:
 
 ---
 
-_Last updated: 2026-04-24 (Day 14 afternoon — deployment Phase 1 + ACR bootstrap push). Days 1–13 feature work complete and committed to `main` (last commit `7d0336e` "chore: have breadcrumb update based on page"). Day 14 morning was deployment planning (§13.1–13.5); Day 14 afternoon shipped Phase 1 code changes (SQL Server + EF migrations, Azure Blob Storage, Dockerfile, production CORS) and Phase 2 step 6 (bootstrap image pushed to ACR with verified digest `sha256:437f0e38…`). Three Day-14-afternoon commits suggested but uncommitted at session end. **Pickup point**: Phase 2 step 7 — run the pre-drafted `az containerapp create` command (see §11 / §13.6) to materialize the Container App. §13.4 table refreshed against `az resource list` reality — corrected resource names: `docparsingstoragetaia` (not `docparsingstorage`), `taia-ams-sql` server in West US 2 hosting `docparsing-db` (not a separate `docparsing-sql`), ACR login server has DNL suffix `docparsingacr-eud7hcanetfxe4ae.azurecr.io`. ACA env chosen: `taia-commission-env`. §7 Deployment subsection added. Day 9 Tailwind migration still PARTIAL — `document/bounding-box-overlay`, `inspector/{inspector,inspector-field}`, and `app/page.module.css` remain on CSS Modules. Voice-Fill feature shipped (Phases 1–4, see `context/VOICE_FEATURE.md`). Demo date ~2026-05-29 (~5 weeks runway). Excel field export deliberately deferred — use ExcelJS (MIT) if added later, NOT SheetJS (SSPL since v0.18.5)._
+_Last updated: 2026-04-26 (Day 15 — Phase 2 + 3 deployment execution). Days 1–14 work committed to `main` (last commit `9f0817a` "chore: updated project context"). Day 15 was zero-code, all-infra: Container App `docparsing-api` deployed via hybrid CLI + portal pattern (PowerShell 5.1 broke `az containerapp create --secrets` against SQL conn strings with spaces); dedicated SQL server `docparsing-sql` provisioned in West US (East US blocked by subscription policy) and orphaned db dropped from shared `taia-ams-sql`; Vercel project deployed via private GitHub mirror with `NEXT_PUBLIC_API_BASE_URL` (note `_BASE_URL`, not `_URL`) → ACA FQDN; CORS opened to Vercel prod + preview wildcard; deploy hook `harness-main-deploy` created and saved locally. End-to-end browser test passed (upload PDF → AI extract → SQL persist) through live infrastructure. **Pickup point**: Phase 3 step 10 — Harness pipeline YAML. Use context7 against Harness docs for current schema; need Azure service principal credentials (lead may have to create) plus ACR password + Vercel deploy hook URL as Harness secrets. §5 Day 15 entry, §7 deployment gotchas, §13.4 table, §13.5b new gotchas section, §13.6 statuses, and §11 pickup-point all refreshed. Day 9 Tailwind migration still PARTIAL (`document/bounding-box-overlay`, `inspector/{inspector,inspector-field}`, `app/page.module.css`). Voice-Fill feature shipped (Phases 1–4, see `context/VOICE_FEATURE.md`). Demo date 2026-05-29 (~5 weeks runway). Excel field export deferred — use ExcelJS (MIT) if added later, NOT SheetJS (SSPL since v0.18.5)._
