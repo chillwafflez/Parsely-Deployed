@@ -110,6 +110,7 @@ PROJECT_CONTEXT.md §13 / Day 13 Part A).
 **Estimated effort:** ~3 days.
 
 ---
+
 ### #3.1 Additional Table Extraction features
 **Goal:** In addition to extracting tables from documents, allow the user to draw
 bounding boxes to extract future tables (for the template feature). Another nice
@@ -123,11 +124,49 @@ the page will not feel cluttered or unintuitive
 ---
 
 
-### #4 AI transformation rules
+### #4 AI-assisted transformation rules
 
 **Goal:** user types a natural-language transformation ("add '+1' to every
 email", "normalize phone numbers to E.164") → LLM converts to a
 regex+replacement → applied on every future parse for that field.
+
+**Backend sketch:**
+
+- Add `TransformDescription` (string, ≤200 chars) and `TransformPattern` /
+  `TransformReplacement` to `TemplateFieldRule`. Migration: additive.
+- New endpoint `POST /api/voice/transform` (or rename to `POST /api/llm/...`
+  since it's no longer voice-specific) — takes `{description, sampleValue}`,
+  returns `{pattern, replacement, previewValue}`. Reuses the **existing
+  OpenAI SDK plumbing** from Voice-Fill (`OpenAIClient`, `gpt-4o-mini`,
+  strict JSON schema output).
+- ⚠ User uses **OpenAI direct** (their own dev-portal API key), not Azure
+  OpenAI — the existing `OpenAIOptions` is already pointed there.
+- `ApplyTemplateRules` runs the transform after extracting the value: if
+  `TransformPattern` is set, `value = Regex.Replace(value, pattern,
+  replacement)`.
+
+**Frontend sketch:**
+
+- In the template rule row (edit page), add a "Transform" expandable section
+  alongside the existing voice hint / aliases.
+- User types description → debounced call to backend → preview
+  before/after side-by-side → Save commits pattern+replacement.
+- Optional: skip the LLM and let the user paste a regex directly (advanced
+  mode toggle).
+
+**Why ship this:** best AI-flavored demo moment of the remaining items.
+"Watch — I tell it 'capitalize every vendor name' and it just works."
+
+**Estimated effort:** ~2 days.
+
+---
+
+### #5 Aggregations / Combining Fields
+
+**Goal:** allow users to combine fields. This could be custom fields or functions
+for example, a document could have a first name and last name field, but we want
+both those names to be concatenated together. We could have a custom field/function
+that combines that and adds a space between them.
 
 **Backend sketch:**
 

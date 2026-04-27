@@ -13,7 +13,8 @@ public record DocumentResponse(
     string? ErrorMessage,
     Guid? TemplateId,
     string? TemplateName,
-    IReadOnlyList<ExtractedFieldResponse> Fields)
+    IReadOnlyList<ExtractedFieldResponse> Fields,
+    IReadOnlyList<TableResponse> Tables)
 {
     public static DocumentResponse FromEntity(Document doc) => new(
         Id: doc.Id,
@@ -28,6 +29,10 @@ public record DocumentResponse(
         Fields: doc.ExtractedFields
             .OrderBy(f => f.Name)
             .Select(ExtractedFieldResponse.FromEntity)
+            .ToList(),
+        Tables: doc.ExtractedTables
+            .OrderBy(t => t.Index)
+            .Select(TableResponse.FromEntity)
             .ToList());
 }
 

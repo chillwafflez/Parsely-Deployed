@@ -43,6 +43,7 @@ public class DocumentsController(
     {
         var doc = await db.Documents
             .Include(d => d.ExtractedFields)
+            .Include(d => d.ExtractedTables)
             .Include(d => d.Template)
             .FirstOrDefaultAsync(d => d.Id == id, ct);
 
@@ -141,6 +142,35 @@ public class DocumentsController(
                     BoundingRegionsJson = f.BoundingRegions.Count == 0
                         ? null
                         : JsonSerializer.Serialize(f.BoundingRegions),
+                });
+            }
+
+            foreach (var t in extraction.Tables)
+            {
+                document.ExtractedTables.Add(new ExtractedTable
+                {
+                    Id = Guid.NewGuid(),
+                    DocumentId = document.Id,
+                    Index = t.Index,
+                    PageNumber = t.PageNumber,
+                    RowCount = t.RowCount,
+                    ColumnCount = t.ColumnCount,
+                    BoundingRegionsJson = t.BoundingRegions.Count == 0
+                        ? null
+                        : JsonSerializer.Serialize(ToRegionResponses(t.BoundingRegions)),
+                    // Project service-layer cells into the wire/storage shape so
+                    // TableResponse.FromEntity round-trips cleanly. IsCorrected
+                    // starts false and flips on the first user edit.
+                    CellsJson = JsonSerializer.Serialize(
+                        t.Cells.Select(c => new TableCellResponse(
+                            RowIndex: c.RowIndex,
+                            ColumnIndex: c.ColumnIndex,
+                            RowSpan: c.RowSpan,
+                            ColumnSpan: c.ColumnSpan,
+                            Kind: c.Kind,
+                            Content: c.Content,
+                            IsCorrected: false,
+                            BoundingRegions: ToRegionResponses(c.BoundingRegions))).ToList()),
                 });
             }
 
@@ -443,6 +473,12 @@ public class DocumentsController(
 
         return cx >= bounds.MinX && cx <= bounds.MaxX && cy >= bounds.MinY && cy <= bounds.MaxY;
     }
+
+    private static List<BoundingRegionResponse> ToRegionResponses(
+        IReadOnlyList<BoundingRegionData> regions) =>
+        regions
+            .Select(r => new BoundingRegionResponse(r.PageNumber, r.Polygon.ToArray()))
+            .ToList();
 
     private static string GuessContentType(string fileName) => Path.GetExtension(fileName).ToLowerInvariant() switch
     {

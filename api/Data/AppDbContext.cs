@@ -7,6 +7,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
 {
     public DbSet<Document> Documents => Set<Document>();
     public DbSet<ExtractedField> ExtractedFields => Set<ExtractedField>();
+    public DbSet<ExtractedTable> ExtractedTables => Set<ExtractedTable>();
     public DbSet<Template> Templates => Set<Template>();
     public DbSet<TemplateFieldRule> TemplateFieldRules => Set<TemplateFieldRule>();
 
@@ -42,6 +43,22 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
                   .OnDelete(DeleteBehavior.Cascade);
 
             entity.HasIndex(f => new { f.DocumentId, f.Name });
+        });
+
+        modelBuilder.Entity<ExtractedTable>(entity =>
+        {
+            entity.HasKey(t => t.Id);
+            entity.Property(t => t.CellsJson).IsRequired();
+
+            entity.HasOne(t => t.Document)
+                  .WithMany(d => d.ExtractedTables)
+                  .HasForeignKey(t => t.DocumentId)
+                  .OnDelete(DeleteBehavior.Cascade);
+
+            // (DocumentId, Index) is the natural addressing for "Table N on
+            // document X" — covers the only read pattern (load all tables
+            // for a document, ordered by detection sequence).
+            entity.HasIndex(t => new { t.DocumentId, t.Index });
         });
 
         modelBuilder.Entity<Template>(entity =>

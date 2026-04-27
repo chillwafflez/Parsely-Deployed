@@ -76,8 +76,44 @@ public class DocumentIntelligenceService : IDocumentIntelligenceService
                     .ToList()))
             .ToList();
 
-        return new DocumentExtractionResult(fields, pages);
+        var tables = (result.Tables ?? new List<DocumentTable>())
+            .Select((t, index) => new TableExtraction(
+                Index: index,
+                // Tables can span pages; record the first page for "Table N · pg X"
+                // labels and let BoundingRegions carry the full per-page geometry.
+                // Index access (vs. FirstOrDefault) sidesteps the BoundingRegion
+                // value-type that breaks `?.` in the SDK.
+                PageNumber: t.BoundingRegions is { Count: > 0 } regions
+                    ? regions[0].PageNumber
+                    : 1,
+                RowCount: t.RowCount,
+                ColumnCount: t.ColumnCount,
+                BoundingRegions: ToRegionData(t.BoundingRegions),
+                Cells: (t.Cells ?? new List<DocumentTableCell>())
+                    .Select(c => new TableCellData(
+                        RowIndex: c.RowIndex,
+                        ColumnIndex: c.ColumnIndex,
+                        // Azure omits span for non-merged cells; normalize to 1
+                        // so the frontend never has to special-case nulls.
+                        RowSpan: c.RowSpan ?? 1,
+                        ColumnSpan: c.ColumnSpan ?? 1,
+                        // DocumentTableCellKind is an extensible-enum struct
+                        // (same family as DocumentFieldType — see CLAUDE.md
+                        // gotchas). ToString() yields the wire string we want.
+                        Kind: c.Kind?.ToString() ?? "content",
+                        Content: c.Content,
+                        BoundingRegions: ToRegionData(c.BoundingRegions)))
+                    .ToList()))
+            .ToList();
+
+        return new DocumentExtractionResult(fields, pages, tables);
     }
+
+    private static IReadOnlyList<BoundingRegionData> ToRegionData(
+        IReadOnlyList<BoundingRegion>? regions) =>
+        (regions ?? new List<BoundingRegion>())
+            .Select(r => new BoundingRegionData(r.PageNumber, r.Polygon.ToArray()))
+            .ToList();
 
     /// <summary>
     /// Walks a single field. With flattening on, Dictionary fields recurse
