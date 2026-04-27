@@ -67,7 +67,7 @@ public class DocumentsController(
     [RequestSizeLimit(MaxUploadBytes)]
     public async Task<ActionResult<DocumentResponse>> Upload(
         IFormFile file,
-        [FromQuery] string? modelId,
+        [FromForm] string? modelId,
         [FromForm] string? templateMode,
         [FromForm] Guid? templateId,
         CancellationToken ct)

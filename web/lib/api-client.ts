@@ -2,6 +2,7 @@ import type {
   CreateTemplatePayload,
   DocumentResponse,
   DocumentSummary,
+  DocumentTypeOption,
   ExtractedField,
   FieldCreate,
   FieldUpdate,
@@ -19,6 +20,8 @@ const API_BASE =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:5180";
 
 export interface UploadOptions {
+  /** Azure DI prebuilt model id. Defaults server-side to `prebuilt-invoice` when omitted. */
+  modelId?: string;
   /** Defaults server-side to `"auto"` when omitted. */
   templateMode?: TemplateApplyMode;
   /** Required when `templateMode === "manual"`. */
@@ -31,6 +34,9 @@ export async function uploadDocument(
 ): Promise<DocumentResponse> {
   const formData = new FormData();
   formData.append("file", file);
+  if (options?.modelId) {
+    formData.append("modelId", options.modelId);
+  }
   if (options?.templateMode) {
     formData.append("templateMode", options.templateMode);
   }
@@ -48,6 +54,12 @@ export async function uploadDocument(
     throw new Error(`Upload failed (${res.status}): ${body || res.statusText}`);
   }
 
+  return res.json();
+}
+
+export async function listDocumentTypes(): Promise<DocumentTypeOption[]> {
+  const res = await fetch(`${API_BASE}/api/document-types`, { cache: "no-store" });
+  if (!res.ok) throw new Error(`List document types failed: ${res.status}`);
   return res.json();
 }
 

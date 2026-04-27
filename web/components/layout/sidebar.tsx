@@ -15,6 +15,7 @@ import type { TemplateSummary } from "@/lib/types";
 import { cn } from "@/lib/cn";
 import { formatRelativeTime } from "@/lib/format";
 import { useAppShell } from "@/lib/app-shell-context";
+import { getDocumentTypeName } from "@/lib/document-types";
 import { deleteTemplate } from "@/lib/api-client";
 import { DeleteTemplateModal } from "../modal/delete-template-modal";
 import { Skeleton } from "../ui/skeleton";
@@ -204,6 +205,8 @@ interface TemplateCardProps {
  * button respond to card-level hover/focus-within.
  */
 function TemplateCard({ template, active, onPick, onRequestDelete }: TemplateCardProps) {
+  const { documentTypes } = useAppShell();
+
   const handleKey = (e: React.KeyboardEvent<HTMLDivElement>) => {
     if (e.key === "Enter" || e.key === " ") {
       e.preventDefault();
@@ -262,7 +265,7 @@ function TemplateCard({ template, active, onPick, onRequestDelete }: TemplateCar
         </button>
       </div>
       <div className="flex gap-2 text-[12px] text-ink-3">
-        <span>{template.kind}</span>
+        <span>{getDocumentTypeName(documentTypes, template.modelId)}</span>
         <span className="font-mono">· {template.runs} runs</span>
         <span className="ml-auto text-ink-4">
           {formatRelativeTime(template.createdAt)}

@@ -13,6 +13,7 @@ import {
   updateField,
 } from "@/lib/api-client";
 import { useAppShell } from "@/lib/app-shell-context";
+import { getDocumentTypeName } from "@/lib/document-types";
 import type {
   DocumentResponse,
   DrawResult,
@@ -40,7 +41,7 @@ interface ReviewStageProps {
  * itself is a controlled prop — the parent loader keeps the shell in sync.
  */
 export function ReviewStage({ document, onDocumentChange }: ReviewStageProps) {
-  const { showToast, refreshTemplates } = useAppShell();
+  const { showToast, refreshTemplates, documentTypes } = useAppShell();
   const [selectedFieldId, setSelectedFieldId] = React.useState<string | null>(null);
   const [pendingDraw, setPendingDraw] = React.useState<DrawResult | null>(null);
   const [showSaveTemplate, setShowSaveTemplate] = React.useState(false);
@@ -197,12 +198,15 @@ export function ReviewStage({ document, onDocumentChange }: ReviewStageProps) {
   );
 
   const suggestedTemplateName = React.useMemo(() => {
+    const typeName = getDocumentTypeName(documentTypes, document.modelId);
     const vendor = document.fields.find(
       (f) => f.name.toLowerCase() === "vendorname" && f.value
     );
-    if (vendor?.value) return `${vendor.value.trim()} — Invoice`;
-    return document.fileName.replace(/\.[^.]+$/, "") + " — Template";
-  }, [document.fields, document.fileName]);
+    const stem = vendor?.value
+      ? vendor.value.trim()
+      : document.fileName.replace(/\.[^.]+$/, "");
+    return `${stem} — ${typeName}`;
+  }, [document.fields, document.fileName, document.modelId, documentTypes]);
 
   return (
     <div className="flex flex-1 min-w-0 min-h-0 bg-bg">
@@ -235,6 +239,8 @@ export function ReviewStage({ document, onDocumentChange }: ReviewStageProps) {
         <SaveTemplateModal
           fields={document.fields}
           suggestedName={suggestedTemplateName}
+          modelId={document.modelId}
+          documentTypes={documentTypes}
           onCancel={handleCancelSaveTemplate}
           onSubmit={handleSubmitSaveTemplate}
         />

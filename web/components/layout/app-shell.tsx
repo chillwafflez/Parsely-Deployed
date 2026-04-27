@@ -7,6 +7,7 @@ import { Sidebar } from "./sidebar";
 import { Toast } from "../ui/toast";
 import { AppShellContext, type ToastTone } from "@/lib/app-shell-context";
 import { useTemplates } from "@/lib/hooks/use-templates";
+import { useDocumentTypes } from "@/lib/hooks/use-document-types";
 import type { DocumentResponse } from "@/lib/types";
 
 const TOAST_MS = 2400;
@@ -37,6 +38,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     loading: templatesLoading,
     refresh: refreshTemplates,
   } = useTemplates();
+
+  const {
+    documentTypes,
+    loading: documentTypesLoading,
+  } = useDocumentTypes();
 
   const handlePickTemplate = React.useCallback(
     (id: string) => {
@@ -74,8 +80,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       setActiveDocument,
       templates,
       templatesLoading,
+      documentTypes,
+      documentTypesLoading,
     }),
-    [showToast, refreshTemplates, templates, templatesLoading]
+    [
+      showToast,
+      refreshTemplates,
+      templates,
+      templatesLoading,
+      documentTypes,
+      documentTypesLoading,
+    ]
   );
 
   return (

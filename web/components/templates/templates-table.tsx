@@ -4,6 +4,8 @@ import * as React from "react";
 import { useRouter } from "next/navigation";
 import { Clock, LayoutTemplate } from "lucide-react";
 import { cn } from "@/lib/cn";
+import { useAppShell } from "@/lib/app-shell-context";
+import { getDocumentTypeName } from "@/lib/document-types";
 import { formatRelativeTime } from "@/lib/format";
 import type { TemplateSummary } from "@/lib/types";
 import { TemplateRowActions, type RowAction } from "./template-row-actions";
@@ -84,6 +86,8 @@ interface TemplateRowProps {
 }
 
 function TemplateRow({ template, busy, onOpen, onAction }: TemplateRowProps) {
+  const { documentTypes } = useAppShell();
+
   const handleKey = (e: React.KeyboardEvent<HTMLTableRowElement>) => {
     // Enter/Space navigate to fill flow — matches the sidebar card pattern.
     if (e.key === "Enter" || e.key === " ") {
@@ -124,7 +128,9 @@ function TemplateRow({ template, busy, onOpen, onAction }: TemplateRowProps) {
         <VendorCell vendorHint={template.vendorHint} />
       </td>
       <td className={BODY_CELL}>
-        <span className="text-ink-2">{template.kind}</span>
+        <span className="text-ink-2">
+          {getDocumentTypeName(documentTypes, template.modelId)}
+        </span>
       </td>
       <td className={cn(BODY_CELL, "text-right")}>
         <span className="font-mono text-[12px] text-ink-3">{template.ruleCount}</span>

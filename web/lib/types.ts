@@ -117,7 +117,14 @@ export interface FieldViewModel {
 export interface TemplateSummary {
   id: string;
   name: string;
+  /**
+   * Free-text legacy label retained while the API still returns it. Display
+   * surfaces should resolve the human-readable type from `modelId` via the
+   * catalog (`getDocumentTypeName`) — this field will be dropped in 1D.
+   */
   kind: string;
+  /** Azure DI prebuilt model id, e.g. `prebuilt-invoice`, `prebuilt-tax.us.w2`. */
+  modelId: string;
   description: string | null;
   applyTo: TemplateApplyTo;
   vendorHint: string | null;
@@ -130,7 +137,9 @@ export interface TemplateSummary {
 export interface Template {
   id: string;
   name: string;
+  /** See `TemplateSummary.kind`. */
   kind: string;
+  modelId: string;
   description: string | null;
   applyTo: TemplateApplyTo;
   vendorHint: string | null;
@@ -138,6 +147,16 @@ export interface Template {
   sourceDocumentId: string | null;
   runs: number;
   rules: TemplateFieldRule[];
+}
+
+/**
+ * Catalog entry exposed by `GET /api/document-types`. Drives the upload-stage
+ * picker and resolves a modelId back to a display label across the UI.
+ */
+export interface DocumentTypeOption {
+  modelId: string;
+  displayName: string;
+  sampleAssetUrl: string | null;
 }
 
 export interface TemplateFieldRule {
