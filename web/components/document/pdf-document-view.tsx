@@ -4,7 +4,8 @@ import * as React from "react";
 import { Document, Page, pdfjs } from "react-pdf";
 import "react-pdf/dist/Page/AnnotationLayer.css";
 import "react-pdf/dist/Page/TextLayer.css";
-import type { DrawResult, ExtractedField } from "@/lib/types";
+import type { DrawResult, ExtractedField, ExtractedTable } from "@/lib/types";
+import type { Selection } from "@/lib/selection";
 import { BoundingBoxOverlay } from "./bounding-box-overlay";
 import { DrawingLayer } from "./drawing-layer";
 
@@ -36,8 +37,13 @@ pdfjs.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjs.vers
 interface PdfDocumentViewProps {
   fileUrl: string;
   fields: ExtractedField[];
-  selectedFieldId: string | null;
-  onSelectField: (id: string | null) => void;
+  /** Tables to potentially overlay. Optional so callers that pass
+   *  `renderPageOverlay` (TemplateFillStage, TemplatePreviewPane) don't
+   *  need to thread irrelevant table state through. */
+  tables?: ExtractedTable[];
+  selection?: Selection | null;
+  activeTableId?: string | null;
+  onSelect?: (selection: Selection | null) => void;
   zoom: number;
   onPagesLoaded?: (count: number) => void;
   drawMode: boolean;
@@ -57,11 +63,15 @@ interface PageDimensions {
 
 const BASE_PAGE_WIDTH = 720;
 
+const NOOP_SELECT: (s: Selection | null) => void = () => {};
+
 export default function PdfDocumentView({
   fileUrl,
   fields,
-  selectedFieldId,
-  onSelectField,
+  tables = [],
+  selection = null,
+  activeTableId = null,
+  onSelect = NOOP_SELECT,
   zoom,
   onPagesLoaded,
   drawMode,
@@ -164,8 +174,10 @@ export default function PdfDocumentView({
                       pageWidthPoints={dims.widthPoints}
                       pageHeightPoints={dims.heightPoints}
                       fields={fields}
-                      selectedFieldId={selectedFieldId}
-                      onSelectField={onSelectField}
+                      tables={tables}
+                      selection={selection}
+                      activeTableId={activeTableId}
+                      onSelect={onSelect}
                     />
                   )}
             </div>

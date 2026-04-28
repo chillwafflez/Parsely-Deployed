@@ -77,8 +77,6 @@ export function TemplatePreviewPane({
         <PdfDocumentView
           fileUrl={sourcePdfUrl}
           fields={[]}
-          selectedFieldId={null}
-          onSelectField={() => {}}
           zoom={0.85}
           drawMode={false}
           onDrawComplete={() => {}}

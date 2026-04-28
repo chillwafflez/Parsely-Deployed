@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { DocumentPane } from "./document-pane";
+import { TableDrawer } from "./table-drawer";
 import { Inspector } from "../inspector/inspector";
 import { NameFieldModal } from "../modal/name-field-modal";
 import { SaveTemplateModal } from "../modal/save-template-modal";
@@ -245,31 +246,47 @@ export function ReviewStage({ document, onDocumentChange }: ReviewStageProps) {
     return `${stem} — ${typeLabel}`;
   }, [document.fields, document.fileName, typeLabel]);
 
+  // Outer wrapper is column so the bottom drawer can dock under the
+  // (DocumentPane + Inspector) row without overlapping either.
   return (
-    <div className="flex flex-1 min-w-0 min-h-0 bg-bg">
-      <DocumentPane
-        fileUrl={pdfUrl}
-        fileName={document.fileName}
-        fields={document.fields}
-        selectedFieldId={selectedFieldId}
-        onSelectField={handleSelectField}
-        onDrawComplete={handleDrawComplete}
-      />
-      <Inspector
-        fields={document.fields}
-        tables={document.tables}
-        fileName={document.fileName}
-        modelId={document.modelId}
-        typeLabel={typeLabel}
-        selectedFieldId={selectedFieldId}
-        onSelectField={handleSelectField}
-        activeTableId={activeTableId}
-        onSelectTable={handleSelectTable}
-        onUpdateField={handleUpdateField}
-        onDeleteField={handleDeleteField}
-        onSaveTemplate={handleOpenSaveTemplate}
-        templateName={document.templateName ?? undefined}
-      />
+    <div className="flex flex-col flex-1 min-w-0 min-h-0 bg-bg">
+      <div className="flex flex-1 min-h-0 min-w-0">
+        <DocumentPane
+          fileUrl={pdfUrl}
+          fileName={document.fileName}
+          fields={document.fields}
+          tables={document.tables}
+          selection={selection}
+          activeTableId={activeTableId}
+          onSelect={setSelection}
+          onDrawComplete={handleDrawComplete}
+        />
+        <Inspector
+          fields={document.fields}
+          tables={document.tables}
+          fileName={document.fileName}
+          modelId={document.modelId}
+          typeLabel={typeLabel}
+          selectedFieldId={selectedFieldId}
+          onSelectField={handleSelectField}
+          activeTableId={activeTableId}
+          onSelectTable={handleSelectTable}
+          onUpdateField={handleUpdateField}
+          onDeleteField={handleDeleteField}
+          onSaveTemplate={handleOpenSaveTemplate}
+          templateName={document.templateName ?? undefined}
+        />
+      </div>
+      {activeTableId && (
+        <TableDrawer
+          tables={document.tables}
+          activeTableId={activeTableId}
+          onSelectTable={handleSelectTable}
+          onClose={() => setActiveTableId(null)}
+          selection={selection}
+          onSelect={setSelection}
+        />
+      )}
       {pendingDraw && (
         <NameFieldModal
           bbox={pendingDraw.bbox}
