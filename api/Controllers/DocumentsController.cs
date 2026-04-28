@@ -155,6 +155,8 @@ public class DocumentsController(
                     PageNumber = t.PageNumber,
                     RowCount = t.RowCount,
                     ColumnCount = t.ColumnCount,
+                    Source = t.Source,
+                    Name = t.Name,
                     BoundingRegionsJson = t.BoundingRegions.Count == 0
                         ? null
                         : JsonSerializer.Serialize(ToRegionResponses(t.BoundingRegions)),

@@ -6,6 +6,26 @@ public class ExtractedTable
     public Guid DocumentId { get; set; }
 
     /// <summary>
+    /// Where this table came from. <c>"Layout"</c> means Azure DI's
+    /// <c>result.Tables</c> (visual structure detected on the page).
+    /// <c>"Synthesized"</c> means the row was synthesized by
+    /// <see cref="Services.TableSynthesizer"/> from an
+    /// <c>Array&lt;Dictionary&gt;</c> structured field — the model's semantic
+    /// interpretation, not a visual table. The two surfaces render in
+    /// different parts of the Inspector; see Phase G architecture in
+    /// <c>context/IDEAS.md</c>.
+    /// </summary>
+    public string Source { get; set; } = "Layout";
+
+    /// <summary>
+    /// Human-readable label. Always set for Synthesized tables (matches the
+    /// originating field path, with a <c>[N]</c> suffix when the same name
+    /// appears multiple times on the document). Null for Layout tables, which
+    /// fall back to "Table N" by detection order in the UI.
+    /// </summary>
+    public string? Name { get; set; }
+
+    /// <summary>
     /// Position within the document (0-based). Preserves Azure DI's detection
     /// order so the Inspector can render "Table 1", "Table 2", … consistently
     /// across reloads.

@@ -39,13 +39,19 @@ public record BoundingRegionData(int PageNumber, IReadOnlyList<float> Polygon);
 /// <summary>
 /// A single table detected on the document. Cells are the source of truth
 /// for both display and editing — RowCount/ColumnCount are convenience
-/// dimensions for sizing the grid up front.
+/// dimensions for sizing the grid up front. <c>Source</c> distinguishes
+/// visual tables (Azure DI's <c>result.Tables</c>) from synthesized tables
+/// built by <see cref="TableSynthesizer"/> from
+/// <c>Array&lt;Dictionary&gt;</c> structured fields — the two surfaces
+/// render in different parts of the Inspector.
 /// </summary>
 public record TableExtraction(
     int Index,
     int PageNumber,
     int RowCount,
     int ColumnCount,
+    string Source,
+    string? Name,
     IReadOnlyList<BoundingRegionData> BoundingRegions,
     IReadOnlyList<TableCellData> Cells);
 

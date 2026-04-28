@@ -21,6 +21,9 @@ public static class DocumentTypeCatalog
             DisplayName: "Invoice",
             IdentifierFieldPath: "VendorName",
             FlattenMaps: false,
+            // Invoice's prebuilt model populates result.Tables natively
+            // (verified empirically on the sample invoice).
+            NeedsLayoutFallback: false,
             SampleAssetUrl: null),
 
         new(
@@ -28,6 +31,9 @@ public static class DocumentTypeCatalog
             DisplayName: "Receipt",
             IdentifierFieldPath: "MerchantName",
             FlattenMaps: false,
+            // Verified empirically (DI Studio): receipts come back with an
+            // empty result.Tables array. Fallback to layout for visual tables.
+            NeedsLayoutFallback: true,
             SampleAssetUrl: null),
 
         new(
@@ -39,6 +45,9 @@ public static class DocumentTypeCatalog
             // can target the employer name directly.
             IdentifierFieldPath: "Employer.Name",
             FlattenMaps: true,
+            // W-2 returns fields-only, no result.Tables (Microsoft Learn /
+            // Context7 research). Layout fallback gives the visible boxes.
+            NeedsLayoutFallback: true,
             SampleAssetUrl: null),
 
         new(
@@ -50,6 +59,8 @@ public static class DocumentTypeCatalog
             // needs a parse to confirm before matching relies on it.
             IdentifierFieldPath: "EmployerName",
             FlattenMaps: true,
+            // Paystub returns fields-only, no result.Tables (Context7 docs).
+            NeedsLayoutFallback: true,
             SampleAssetUrl: null),
 
         new(
@@ -60,6 +71,11 @@ public static class DocumentTypeCatalog
             // (nested). Confirm against a real statement before relying on it.
             IdentifierFieldPath: "AccountHolderName",
             FlattenMaps: true,
+            // Bank statement is the original Phase G motivator: the model
+            // emits Accounts/Transactions as structured fields but skips
+            // result.Tables entirely. Layout fallback recovers the full
+            // 29-row transactions table including the Balance column.
+            NeedsLayoutFallback: true,
             SampleAssetUrl: null),
     };
 
@@ -84,4 +100,12 @@ public record DocumentTypeDefinition(
     string DisplayName,
     string IdentifierFieldPath,
     bool FlattenMaps,
+    /// <summary>
+    /// True when the chosen prebuilt model returns an empty
+    /// <c>result.Tables</c> and we should run a parallel
+    /// <c>prebuilt-layout</c> call to get visual tables. Costs ~+1s and
+    /// ~one extra Azure DI page per upload (latency hidden by
+    /// Task.WhenAll). False for models that include layout natively.
+    /// </summary>
+    bool NeedsLayoutFallback,
     string? SampleAssetUrl);

@@ -50,6 +50,15 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             entity.HasKey(t => t.Id);
             entity.Property(t => t.CellsJson).IsRequired();
 
+            // DB-side default mirrors the CLR default and backfills any
+            // pre-existing rows added before Phase G with "Layout" — same
+            // pattern as Template.ModelId (Add_Template_ModelId migration).
+            entity.Property(t => t.Source)
+                  .HasMaxLength(32)
+                  .IsRequired()
+                  .HasDefaultValue("Layout");
+            entity.Property(t => t.Name).HasMaxLength(512);
+
             entity.HasOne(t => t.Document)
                   .WithMany(d => d.ExtractedTables)
                   .HasForeignKey(t => t.DocumentId)

@@ -9,6 +9,8 @@ public record TableResponse(
     int PageNumber,
     int RowCount,
     int ColumnCount,
+    string Source,
+    string? Name,
     IReadOnlyList<BoundingRegionResponse> BoundingRegions,
     IReadOnlyList<TableCellResponse> Cells)
 {
@@ -28,6 +30,8 @@ public record TableResponse(
             PageNumber: t.PageNumber,
             RowCount: t.RowCount,
             ColumnCount: t.ColumnCount,
+            Source: t.Source,
+            Name: t.Name,
             BoundingRegions: regions,
             Cells: cells);
     }
