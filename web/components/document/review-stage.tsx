@@ -12,7 +12,12 @@ import {
   deleteField,
   fileUrl as apiFileUrl,
   updateField,
+  updateTableCell,
 } from "@/lib/api-client";
+import {
+  exportTableAsCsv,
+  exportTableAsJson,
+} from "@/lib/exporters/table-exporter";
 import { useAppShell } from "@/lib/app-shell-context";
 import { getDocumentTypeName } from "@/lib/document-types";
 import {
@@ -27,6 +32,7 @@ import type {
   FieldDataType,
   FieldUpdate,
   RuleOverride,
+  TableCell,
   TemplateApplyTo,
 } from "@/lib/types";
 
@@ -168,6 +174,96 @@ export function ReviewStage({ document, onDocumentChange }: ReviewStageProps) {
     [document.id, onDocumentChange, selection, showToast]
   );
 
+  /**
+   * Optimistic table-cell update. Same shape as the field flow: capture the
+   * previous cell, mutate locally, PATCH, replace with the server's
+   * canonical row on success or restore the captured value on error.
+   * Concurrency-safe within a single browser tab — the cell is addressed by
+   * (rowIndex, columnIndex), so two edits to different cells never collide.
+   */
+  const handleUpdateCell = React.useCallback(
+    async (
+      tableId: string,
+      rowIndex: number,
+      columnIndex: number,
+      content: string | null
+    ) => {
+      let previous: TableCell | null = null;
+
+      const writeCell = (
+        prev: DocumentResponse,
+        replace: (cell: TableCell) => TableCell
+      ): DocumentResponse => ({
+        ...prev,
+        tables: prev.tables.map((t) =>
+          t.id !== tableId
+            ? t
+            : {
+                ...t,
+                cells: t.cells.map((c) =>
+                  c.rowIndex === rowIndex && c.columnIndex === columnIndex
+                    ? replace(c)
+                    : c
+                ),
+              }
+        ),
+      });
+
+      onDocumentChange((prev) => {
+        const table = prev.tables.find((t) => t.id === tableId);
+        previous =
+          table?.cells.find(
+            (c) => c.rowIndex === rowIndex && c.columnIndex === columnIndex
+          ) ?? null;
+        return writeCell(prev, (cell) => ({ ...cell, content, isCorrected: true }));
+      });
+
+      try {
+        const saved = await updateTableCell(document.id, tableId, {
+          rowIndex,
+          columnIndex,
+          content,
+        });
+        onDocumentChange((prev) => writeCell(prev, () => saved));
+      } catch (err) {
+        if (previous) {
+          const restore = previous;
+          onDocumentChange((prev) => writeCell(prev, () => restore));
+        }
+        showToast(err instanceof Error ? err.message : "Save failed", "err");
+      }
+    },
+    [document.id, onDocumentChange, showToast]
+  );
+
+  /**
+   * Helper that resolves a tableId → table and forwards to the exporter.
+   * Centralised here so the Inspector quick-export and the drawer toolbar
+   * share the same lookup + filename logic.
+   */
+  const exportTable = React.useCallback(
+    (tableId: string, format: "csv" | "json") => {
+      const table = document.tables.find((t) => t.id === tableId);
+      if (!table) return;
+      if (format === "csv") {
+        exportTableAsCsv(table, document.fileName);
+      } else {
+        exportTableAsJson(table, document.fileName);
+      }
+    },
+    [document.fileName, document.tables]
+  );
+
+  const handleExportTableCsv = React.useCallback(
+    (tableId: string) => exportTable(tableId, "csv"),
+    [exportTable]
+  );
+
+  const handleExportTableJson = React.useCallback(
+    (tableId: string) => exportTable(tableId, "json"),
+    [exportTable]
+  );
+
   const handleDrawComplete = React.useCallback((result: DrawResult) => {
     setPendingDraw(result);
   }, []);
@@ -271,6 +367,7 @@ export function ReviewStage({ document, onDocumentChange }: ReviewStageProps) {
           onSelectField={handleSelectField}
           activeTableId={activeTableId}
           onSelectTable={handleSelectTable}
+          onExportTable={handleExportTableCsv}
           onUpdateField={handleUpdateField}
           onDeleteField={handleDeleteField}
           onSaveTemplate={handleOpenSaveTemplate}
@@ -285,6 +382,9 @@ export function ReviewStage({ document, onDocumentChange }: ReviewStageProps) {
           onClose={() => setActiveTableId(null)}
           selection={selection}
           onSelect={setSelection}
+          onUpdateCell={handleUpdateCell}
+          onExportCsv={handleExportTableCsv}
+          onExportJson={handleExportTableJson}
         />
       )}
       {pendingDraw && (

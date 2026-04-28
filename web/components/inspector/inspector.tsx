@@ -32,6 +32,8 @@ interface InspectorProps {
    *  Phase D, opened in the bottom drawer). Independent of field selection. */
   activeTableId: string | null;
   onSelectTable: (id: string) => void;
+  /** Quick-export this table as CSV without opening the drawer. */
+  onExportTable: (id: string) => void;
   onUpdateField: (id: string, update: FieldUpdate) => void;
   onDeleteField: (id: string) => void;
   onSaveTemplate: () => void;
@@ -48,6 +50,7 @@ export function Inspector({
   onSelectField,
   activeTableId,
   onSelectTable,
+  onExportTable,
   onUpdateField,
   onDeleteField,
   onSaveTemplate,
@@ -171,6 +174,7 @@ export function Inspector({
             tables={tables}
             activeTableId={activeTableId}
             onSelectTable={onSelectTable}
+            onExportTable={onExportTable}
           />
         )}
       </div>

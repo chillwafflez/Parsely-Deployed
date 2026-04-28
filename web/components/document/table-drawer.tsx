@@ -1,7 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { Table as TableIcon, X } from "lucide-react";
+import { Download, Table as TableIcon, X } from "lucide-react";
+import { Button } from "../ui/button";
 import { cn } from "@/lib/cn";
 import { isTableCellSelection, type Selection } from "@/lib/selection";
 import type { ExtractedTable } from "@/lib/types";
@@ -17,6 +18,16 @@ interface TableDrawerProps {
   onClose: () => void;
   selection: Selection | null;
   onSelect: (selection: Selection | null) => void;
+  /** Commits a cell edit. Address (rowIndex, columnIndex) — top-left for merged cells. */
+  onUpdateCell: (
+    tableId: string,
+    rowIndex: number,
+    columnIndex: number,
+    content: string | null
+  ) => void;
+  /** Per-table export. Wired to the toolbar buttons. */
+  onExportCsv: (tableId: string) => void;
+  onExportJson: (tableId: string) => void;
 }
 
 const STORAGE_KEY = "table-drawer-height-percent";
@@ -32,6 +43,9 @@ export function TableDrawer({
   onClose,
   selection,
   onSelect,
+  onUpdateCell,
+  onExportCsv,
+  onExportJson,
 }: TableDrawerProps) {
   const [heightPct, setHeightPct] = React.useState<number>(DEFAULT_HEIGHT);
 
@@ -62,6 +76,14 @@ export function TableDrawer({
       rowIndex,
       columnIndex,
     });
+  };
+
+  const handleCommitCell = (
+    rowIndex: number,
+    columnIndex: number,
+    content: string | null
+  ) => {
+    onUpdateCell(activeTableId, rowIndex, columnIndex, content);
   };
 
   const selectedCellLabel = isTableCellSelection(selection) && selection.tableId === activeTableId
@@ -109,6 +131,21 @@ export function TableDrawer({
 
         <div className="flex items-center gap-2 py-2">
           <span className="text-[11.5px] text-ink-3">{selectedCellLabel}</span>
+          <div className="w-px h-4 bg-line mx-1" aria-hidden />
+          <Button
+            onClick={() => onExportCsv(activeTableId)}
+            title="Download this table as CSV"
+          >
+            <Download size={12} />
+            CSV
+          </Button>
+          <Button
+            onClick={() => onExportJson(activeTableId)}
+            title="Download this table as JSON"
+          >
+            <Download size={12} />
+            JSON
+          </Button>
           <button
             type="button"
             onClick={onClose}
@@ -128,6 +165,7 @@ export function TableDrawer({
         table={activeTable}
         selection={selection}
         onSelectCell={handleSelectCell}
+        onCommitCell={handleCommitCell}
       />
 
       <div

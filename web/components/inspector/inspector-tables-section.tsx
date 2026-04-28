@@ -1,22 +1,25 @@
 "use client";
 
 import * as React from "react";
-import { Table as TableIcon } from "lucide-react";
+import { Download, Table as TableIcon } from "lucide-react";
 import { cn } from "@/lib/cn";
 import type { ExtractedTable } from "@/lib/types";
 
 interface InspectorTablesSectionProps {
   tables: ExtractedTable[];
-  /** Phase D: opens the bottom drawer to this table. Phase C: just visual. */
+  /** Phase D: opens the bottom drawer to this table. */
   activeTableId: string | null;
-  /** Toggle: clicking the active row sets it back to null (drawer-close in Phase D). */
+  /** Toggle: clicking the active row sets it back to null (closes the drawer). */
   onSelectTable: (id: string) => void;
+  /** CSV quick-export — no drawer round-trip. JSON export lives in the drawer. */
+  onExportTable: (id: string) => void;
 }
 
 export function InspectorTablesSection({
   tables,
   activeTableId,
   onSelectTable,
+  onExportTable,
 }: InspectorTablesSectionProps) {
   return (
     <section className="border-t border-line">
@@ -45,6 +48,7 @@ export function InspectorTablesSection({
             table={table}
             active={table.id === activeTableId}
             onSelect={onSelectTable}
+            onExport={onExportTable}
           />
         ))}
       </div>
@@ -56,9 +60,10 @@ interface InspectorTableRowProps {
   table: ExtractedTable;
   active: boolean;
   onSelect: (id: string) => void;
+  onExport: (id: string) => void;
 }
 
-function InspectorTableRow({ table, active, onSelect }: InspectorTableRowProps) {
+function InspectorTableRow({ table, active, onSelect, onExport }: InspectorTableRowProps) {
   // Tables don't carry user-friendly names from Azure DI — the source of
   // record is just detection order. "Table N" is good enough for V1; renaming
   // can land alongside the table-rules feature in a later iteration.
@@ -83,7 +88,7 @@ function InspectorTableRow({ table, active, onSelect }: InspectorTableRowProps) 
       onClick={() => onSelect(table.id)}
       onKeyDown={handleKey}
       className={cn(
-        "grid grid-cols-[auto_1fr] gap-2.5 items-center",
+        "group grid grid-cols-[auto_1fr_auto] gap-2.5 items-center",
         "px-2.5 py-2 rounded-md cursor-pointer",
         "border transition-colors",
         "focus-visible:outline-[2px_solid_var(--color-accent)] focus-visible:outline-offset-2",
@@ -109,6 +114,26 @@ function InspectorTableRow({ table, active, onSelect }: InspectorTableRowProps) 
         </div>
         <div className="text-[11px] text-ink-3 mt-px font-mono">{meta}</div>
       </div>
+      {/* Hover-revealed CSV quick-export. Always visible on focus-within so
+          keyboard users get parity with mouse hover. stopPropagation keeps
+          the click off the row's open-drawer handler. */}
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          onExport(table.id);
+        }}
+        title="Export this table as CSV"
+        aria-label={`Export ${label} as CSV`}
+        className={cn(
+          "w-7 h-7 grid place-items-center rounded-md text-ink-3",
+          "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity",
+          "hover:bg-surface hover:text-ink",
+          "focus-visible:opacity-100 focus-visible:outline-[2px_solid_var(--color-accent)] focus-visible:outline-offset-1"
+        )}
+      >
+        <Download size={12} />
+      </button>
     </div>
   );
 }
