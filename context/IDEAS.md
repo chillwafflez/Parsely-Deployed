@@ -1,6 +1,7 @@
 # Feature Ideas — Roadmap
 
-> Last updated **2026-04-27** after the multi-document-type feature shipped.
+> Last updated **2026-04-28** — Phases A–F of #3 shipped; Phase G has a
+> locked architecture (below) and is the next thing to build.
 > The full architecture / day-by-day history lives in
 > `context/PROJECT_CONTEXT.md`. This file is the forward-looking backlog —
 > read it first if you're picking up where we left off.
@@ -15,7 +16,7 @@
 |---|---|---|
 | 1 | Multi-document-type support | ✅ **Shipped** (sub-phases 1A → 1D) |
 | 2 | Field validation rules | 🔲 Not started — next up |
-| 3 | Table extraction + CSV export | 🔲 Not started |
+| 3 | Table extraction + CSV export | ⚠ **Phases A–F shipped**; Phase G architecture locked, not yet built |
 | 4 | AI transformation rules | 🔲 Not started |
 
 **Tier 2 — good but compete for time:**
@@ -74,40 +75,196 @@ well-known validation shapes (SSN, EIN, date ranges). Pairs with #1 nicely.
 
 ### #3 Table extraction + CSV export
 
-**Verified via context7:** `result.Tables` is populated by **all** prebuilt
-models that build on the layout substrate, including `prebuilt-invoice`. Each
-cell has `RowIndex`, `ColumnIndex`, `Kind` (`columnHeader` / `content`),
-`Content`, and bounding regions. So we get table data for free across every
-existing supported model.
+**Status (2026-04-28):** Phases A–F shipped and committed. Phase G ("synthesize
+tables from `Array<Dictionary>` structured fields to cover bank statements")
+was implemented in this session, smoke-tested, and **reverted by the user**
+because the synthesized-as-tables approach was the wrong abstraction — see
+"Why Phase G was reverted" below. A new Phase G architecture is locked and
+is the next thing to build.
 
-**Backend sketch:**
+> **Note for the next session:** before doing anything else, run
+> `git status` + `git log --oneline` to confirm the working tree reflects
+> only Phases A–F. The previous CSV/JSON export commit
+> (`feat(web): editable table cells + CSV/JSON export`, hash `cf571c6`)
+> should be the most recent table-related commit. If `Add_ExtractedTable_Name`
+> migration or `TableSynthesizer.cs` / `RegionGeometry.cs` files are still
+> present, the revert is incomplete.
 
-- `DocumentExtractionResult` gains a `Tables` collection (list of
-  `(rowCount, columnCount, cells, boundingRegions)`).
-- Persist as a new `ExtractedTable` entity? Or store as JSON on `Document`?
-  - Recommend separate entity for queryability + smaller per-row payload.
-  - Schema: `Id`, `DocumentId`, `Index` (table # in doc), `RowCount`,
-    `ColumnCount`, `CellsJson` (denormalized).
-- Migration: additive.
+#### Phases A–F — what shipped (chronology in PROJECT_CONTEXT.md)
 
-**Frontend sketch:**
+End-to-end table extraction for any prebuilt model that populates
+`result.Tables` natively (invoice, receipt, layout). High-level outline:
 
-- New "Tables" section in the Inspector below the field groups, expandable.
-- `TableViewer` component — read-only mini-grid with header row, scrollable.
-  Cells highlight on hover; clicking selects the bbox in the PDF (mirrors
-  the existing field-bbox interaction).
-- New CSV exporter: `lib/exporters/table-exporter.ts` — RFC 4180-compliant
-  per the existing field-exporter pattern. One CSV per table, `{filename}-
-  table-{n}.csv`.
-- "Picture-of-table → CSV" flow (Markus's #6.3): a separate upload mode
-  using `prebuilt-layout` directly. Could be a Tier-2 stretch.
+- **A** — Backend extraction + persistence. New `ExtractedTable` entity,
+  additive EF migration, `result.Tables` mapped via `DocumentIntelligenceService.AnalyzeAsync`,
+  surfaced through `DocumentResponse.Tables`. Cells stored denormalised in
+  `CellsJson` (read-modify-write at prototype scale).
+- **B** — `PATCH /api/documents/{id}/tables/{tableId}/cells` for cell edits.
+  Range-validates `(rowIndex, columnIndex)`, no-op early-return when content
+  is unchanged, returns the updated `TableCellResponse`.
+- **C** — Discriminated `Selection` union (`field | tableCell`) in
+  `web/lib/selection.ts`. Inspector "Tables" section + row component using
+  a dedicated `--color-table-*` palette (oklch hue 55, distinct from `warn`).
+- **D** — Bottom drawer (`components/document/table-drawer.tsx`) with
+  WAI-ARIA Window Splitter resize handle (full keyboard control, height
+  persisted to `localStorage`), tab strip per table, read-only `TableGrid`.
+  `BoundingBoxOverlay` extended with `TableOutline` (active-table region) +
+  `CellHighlight` (selected cell), both `pointer-events-none` so field
+  clicks underneath still work.
+- **E** — Inline cell editing via the shared `useInlineEdit` hook.
+  Optimistic update + rollback in `ReviewStage.handleUpdateCell`,
+  mirroring the field-edit pattern. Empty-string commits as `null`.
+- **F** — `web/lib/exporters/table-exporter.ts` with RFC 4180 CSV +
+  friendly JSON. Merged cells expand by repeating content across spanned
+  positions. Wired in the drawer toolbar (CSV + JSON) and as an Inspector
+  hover-revealed CSV quick-export per row.
 
-**Excel deferred:** user explicitly chose CSV-only for V1. If/when Excel is
-added, use **ExcelJS** (MIT, ~1 MB, lazy-imported). **Do not use SheetJS** —
-it switched to SSPL at v0.18.5, legally murky for commercial SaaS (see
+The tables UI works correctly today on any document where Azure DI returns
+a non-empty `result.Tables`. **Bank statements are the gap** —
+`prebuilt-bankStatement.us` doesn't populate `result.Tables` at all (its
+tabular data lives entirely under `Documents[0].Fields["Accounts"][i].Transactions`),
+so the "Tables" section is empty after a bank-statement upload. Closing
+that gap is what Phase G is for.
+
+**Excel still deferred:** CSV-only for V1. If/when Excel is added, use
+**ExcelJS** (MIT, ~1 MB, lazy-imported). **Do not use SheetJS** — it
+switched to SSPL at v0.18.5, legally murky for commercial SaaS (see
 PROJECT_CONTEXT.md §13 / Day 13 Part A).
 
-**Estimated effort:** ~3 days.
+#### Why Phase G was reverted
+
+The first Phase G attempt synthesized `TableExtraction`s from
+`Array<Dictionary>` structured fields (invoice `Items`, paystub
+`EarningsDetails`, bank-statement `Accounts[i].Transactions`, etc.) and
+surfaced them in the same Inspector "Tables" section as
+layout-detected tables. A 50% area-overlap dedupe dropped layout tables
+that geometrically matched a synthesized one ("prefer Channel 2 when
+present"). Real-world testing on a bank statement and the same PDF run
+under the invoice model revealed two fundamental problems:
+
+1. **Field bboxes are scattered across the page.** Bank statement
+   `Accounts[i]` holds scalar fields like `AccountHolderName` (top-left),
+   `EndingBalance` (bottom-right), `BankAddress` (side block), etc. The
+   per-cell bbox union produces a giant rectangle covering most of the
+   header — visually dishonest, since "Accounts" isn't a visual table on
+   the document.
+2. **Structured extraction is partial / interpretive.** On the user's
+   bank statement (29 transaction rows, 5 columns including Balance),
+   the model emitted `Transactions[]` for the 8 fully-typed rows only —
+   skipping 21 balance-only carry-forwards. The same PDF analysed
+   separately with `prebuilt-layout` produced a `result.Tables` entry
+   with all 29 rows and all 5 columns. The invoice model on the same
+   PDF showed the same partial-extraction pattern (`Items` with 8 rows,
+   3 columns) — but its underlying layout substrate also produced the
+   full 29-row table, visible in DI Studio's Content tab.
+
+Conclusion: `Array<Dictionary>` data is the **model's structured
+interpretation**, not the document's visual table structure. Layout's
+`result.Tables` is the visual structure. They serve different purposes
+and should be surfaced in **different parts of the UI**.
+
+#### Phase G — locked architecture (decided 2026-04-28)
+
+Two table sources, two surfaces.
+
+| Surface | Source | Contents |
+|---|---|---|
+| Inspector "Tables" section | `result.Tables` (Channel 1) | Visual tables. Run `prebuilt-layout` as a fallback when the chosen model returns zero. |
+| Inspector field row (with tabular badge) | Synthesized from `Array<Dictionary>` (Channel 2) | Model's structured interpretation. Click → opens the same bottom drawer the layout tables use. |
+| Bottom-drawer tab strip | Both | Tabs include layout tables AND tabular records; user navigates freely. |
+
+**Locked decisions** (from the design discussion at end of the session):
+
+1. **Layout-fallback trigger:** when `result.Tables.Count == 0` AND
+   `modelId != "prebuilt-layout"`, make a second `AnalyzeAsync` call with
+   `prebuilt-layout` and merge its tables in. Skip when invoice/receipt
+   etc. already include layout natively (their `result.Tables` is
+   non-empty). Cost: ~+1s + ~+50% Azure DI per upload on the models that
+   need fallback (currently bank statement, possibly W-2 / paystub —
+   confirm empirically). Trade-off explicitly chosen.
+2. **Tabular field row UI:** small `Table` icon + `{field name}` + count
+   badge (e.g., "12 records") + chevron. Click opens the drawer to that
+   table. **Not inline-editable** — the data lives in the synth-table
+   cells; editing happens in the drawer.
+3. **No Channel 1 ↔ 2 dedupe.** Now that the two sources have different
+   homes, they coexist intentionally. An invoice will show layout's Items
+   table in "Tables" AND a synth `Items` row in the field section.
+4. **`BoundingBoxOverlay.TableOutline` only renders for `Source = "Layout"`.**
+   Synth tables don't have meaningful overall regions (the bbox union is
+   misleading, see "Why reverted" above). Individual cell-highlight
+   bboxes still render correctly for both sources because those come from
+   the underlying field's own `BoundingRegions`.
+
+**Backend changes**
+
+| File | Change |
+|---|---|
+| `api/Models/ExtractedTable.cs` | Add `Source` (string, `"Layout"` \| `"Synthesized"`). Probably also re-add `Name` (it was useful for synth tables in v1 and is still useful here). |
+| `api/Data/AppDbContext.cs` | Configure `Source` (HasMaxLength 32, IsRequired, default `"Layout"`); configure `Name` (HasMaxLength 512, nullable). |
+| `api/Migrations/<ts>_Add_ExtractedTable_Source_And_Name.cs` | Single additive migration covering both columns. Defaults `Source = "Layout"` for any pre-existing rows. |
+| `api/Contracts/TableResponse.cs` | Add `Source` and `Name` to record + `FromEntity`. |
+| `api/Services/IDocumentIntelligenceService.cs` | Add `Source` and `Name` to `TableExtraction` record. |
+| `api/Services/DocumentIntelligenceService.cs` | (a) Tag layout tables with `Source = "Layout"`. (b) After mapping the chosen-model call, if `result.Tables.Count == 0` AND `modelId != "prebuilt-layout"`, make a second `AnalyzeAsync(modelId: "prebuilt-layout")` call against the same buffered stream and merge its tables in (also tagged Layout). (c) Synthesizer emits `Source = "Synthesized"`. (d) **Drop the `RegionGeometry` overlap-dedupe entirely** — both sources now coexist. |
+| `api/Services/TableSynthesizer.cs` | Re-create from `git log` of the reverted commit. The recursion + flat-name + collision-`[N]`-suffix algorithm is correct; only the channel routing was wrong. Just emit `Source = "Synthesized"` on each table. |
+| `api/Services/RegionGeometry.cs` | Not needed for Phase G v2 (no dedupe). Either skip re-creation or keep for future use. |
+| `api/Services/DocumentIntelligenceService.cs` `EmitFields` | **Behavior change vs. reverted v1:** instead of suppressing `Array<Dictionary>` entirely, emit a "tabular" placeholder field row whose value summarises the array (`"{N} records"`) and whose data type signals the frontend to render the tabular variant. Recommended: set `DataType = "Tabular"` (already a string, no schema change) — the frontend matches on this. |
+| `api/Controllers/DocumentsController.cs` | Persist `Source = t.Source` and `Name = t.Name` when adding `ExtractedTable`. Buffer the upload stream once and reset its position before each `AnalyzeAsync` call (existing buffer-once pattern from Day 14 Phase 1; the second layout call is the second consumer). |
+
+**Frontend changes**
+
+| File | Change |
+|---|---|
+| `web/lib/types.ts` | `ExtractedTable.source: "Layout" \| "Synthesized"`; `ExtractedTable.name: string \| null`. No `ExtractedField` shape change if backend uses `DataType = "Tabular"` as the discriminator. |
+| `web/components/inspector/inspector.tsx` | Pass through. |
+| `web/components/inspector/inspector-tables-section.tsx` | Filter incoming `tables` to `source === "Layout"` only. Empty-state when none (rare after layout fallback, but possible on a document that genuinely has no visual tables). |
+| `web/components/inspector/inspector-tabular-row.tsx` *(new)* — or extend `InspectorField` with a tabular branch | Renders the tabular field row: small `Table` icon + name + "{N} records" + chevron. Click resolves the corresponding synth table by name and calls `onSelectTable(table.id)`. Inline-edit disabled. |
+| `web/components/document/table-drawer.tsx` | Tab strip continues to accept all tables. Optional visual differentiation between Layout and Synthesized tabs (different icon color or a subtle "structured" badge on synth tabs). |
+| `web/components/document/bounding-box-overlay.tsx` | `TableOutline` skips when `activeTable.source === "Synthesized"`. `CellHighlight` keeps working for both. |
+
+**Tabular row → drawer linkage:** match top-level synth tables to their
+parent field by name (`field.name === table.name`). The synthesizer's
+disambiguation suffix (`[1]`, `[2]`, …) makes names unique within a
+document, so the match is unambiguous.
+
+**Open question for next session — nested synth tables:** bank-statement
+`Accounts[i].Transactions` becomes a synth table named `"Transactions"`
+(or `"Transactions [1]"` / `"Transactions [2]"` for multi-account
+statements). There's no top-level `Transactions` field for it to attach
+to as a tabular row. Two reasonable options:
+
+- (a) Surface them as their own tabular field rows under a "Records"
+  sub-header in the field section. The "field name" of the row is the
+  synth table's `name`. **Friendlier; lean toward this.**
+- (b) Surface them only via the drawer tab strip (the user opens the
+  drawer for the layout `Transactions` table, then can switch tabs to
+  the synth one). Simpler; harder to discover.
+
+User to confirm before implementation. Don't ship without picking one.
+
+#### Phase G — verification matrix
+
+When implementing, smoke-test against real samples:
+
+- **Invoice** (`samples/sample-invoice.pdf`) — should show: layout's
+  Items table in "Tables" section, plus a synth `Items` tabular row in
+  the field section. Both editable via the drawer.
+- **Bank statement** (the user's example PDF) — layout fallback fires
+  (chosen model returned empty `result.Tables`); the layout call should
+  produce a `Tables` entry covering the **full** 29-row, 5-column
+  transaction table including the Balance column. Synth `Accounts` and
+  `Transactions` rows surface in the field section as tabular rows.
+- **Receipt / W-2 / paystub** — confirm `result.Tables` is non-empty
+  (no fallback fires). Synth rows for any `Array<Dictionary>` fields
+  surface in the field section. If W-2 or paystub turn out to also have
+  empty `result.Tables` empirically, the fallback handles them
+  automatically.
+
+#### Phase G — estimated effort
+
+~half-day backend + ~half-day frontend = **~1 day total**. The
+synthesizer algorithm, the migration shape, and the frontend grid /
+drawer / overlay code are all already designed (and most exist in the
+reverted commit's history).
 
 ---
 
