@@ -201,6 +201,11 @@ interface DrawerTabProps {
 }
 
 function DrawerTab({ table, active, onSelect }: DrawerTabProps) {
+  // Synthesised tables carry a meaningful name from the originating field
+  // (Items, Transactions, Transactions [2], …); Layout tables fall back to
+  // detection-order labelling since Azure DI doesn't name them.
+  const label = table.name ?? `Table ${table.index + 1}`;
+
   return (
     <button
       type="button"
@@ -217,7 +222,7 @@ function DrawerTab({ table, active, onSelect }: DrawerTabProps) {
       )}
     >
       <TableIcon size={11} className="text-table" aria-hidden />
-      <span>Table {table.index + 1}</span>
+      <span>{label}</span>
       <span className="font-mono text-[10.5px] text-ink-4 ml-0.5">
         {table.rowCount}×{table.columnCount}
       </span>

@@ -6,6 +6,8 @@ import { cn } from "@/lib/cn";
 import type { ExtractedTable } from "@/lib/types";
 
 interface InspectorTablesSectionProps {
+  /** Full table set; the section filters to source==="Layout" internally so
+   *  the parent doesn't need to know about Phase G's two-channel split. */
   tables: ExtractedTable[];
   /** Phase D: opens the bottom drawer to this table. */
   activeTableId: string | null;
@@ -21,6 +23,15 @@ export function InspectorTablesSection({
   onSelectTable,
   onExportTable,
 }: InspectorTablesSectionProps) {
+  // Visual tables only — synthesized tables surface as Tabular field rows
+  // (top-level) or under the "Records" sub-header (nested orphans).
+  const layoutTables = React.useMemo(
+    () => tables.filter((t) => t.source === "Layout"),
+    [tables]
+  );
+
+  if (layoutTables.length === 0) return null;
+
   return (
     <section className="border-t border-line">
       <header
@@ -37,12 +48,12 @@ export function InspectorTablesSection({
         />
         <span>Tables</span>
         <span className="font-mono font-medium text-ink-4 text-[11px]">
-          {tables.length}
+          {layoutTables.length}
         </span>
       </header>
 
       <div className="px-3 pb-3 flex flex-col gap-1.5">
-        {tables.map((table) => (
+        {layoutTables.map((table) => (
           <InspectorTableRow
             key={table.id}
             table={table}

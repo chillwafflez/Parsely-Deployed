@@ -5,11 +5,35 @@ import { Download, FileSearch, History, Info, PenLine, Save, Search, Sparkles } 
 import { Button } from "../ui/button";
 import { InspectorField } from "./inspector-field";
 import { InspectorTablesSection } from "./inspector-tables-section";
+import { InspectorTabularRow } from "./inspector-tabular-row";
 import { cn } from "@/lib/cn";
 import { groupFields } from "@/lib/field-groups";
 import { exportFieldsAsCsv, exportFieldsAsJson } from "@/lib/exporters/field-exporter";
 import type { ExtractedField, ExtractedTable, FieldUpdate } from "@/lib/types";
 import styles from "./inspector.module.css";
+
+const TABULAR_DATA_TYPE = "Tabular";
+
+/** Header row count excludes the synthesized header — the user thinks in
+ *  data rows, not "rows including the labels at the top". */
+const dataRowCount = (table: ExtractedTable) => Math.max(0, table.rowCount - 1);
+
+const isTabularField = (field: ExtractedField) =>
+  field.dataType === TABULAR_DATA_TYPE;
+
+/**
+ * Look up the synth table that corresponds to a Tabular field row. Names
+ * are unique within a document (the synthesizer's `[N]` suffix
+ * disambiguates), so a name-based match is unambiguous.
+ */
+function findSynthTableByName(
+  tables: ExtractedTable[],
+  name: string
+): ExtractedTable | null {
+  return (
+    tables.find((t) => t.source === "Synthesized" && t.name === name) ?? null
+  );
+}
 
 type Filter = "all" | "issues" | "required";
 
@@ -86,6 +110,32 @@ export function Inspector({
   );
   const hasAnyVisible = visible.length > 0;
 
+  // Resolve a Tabular field row → its synth table by name. Synth-table names
+  // are document-unique (the synthesizer's `[N]` suffix disambiguates), so
+  // a Map lookup is unambiguous + O(1).
+  const synthTableByName = React.useMemo(() => {
+    const map = new Map<string, ExtractedTable>();
+    for (const t of tables) {
+      if (t.source === "Synthesized" && t.name) map.set(t.name, t);
+    }
+    return map;
+  }, [tables]);
+
+  // Orphan synth tables = synth tables with no matching Tabular field row
+  // anywhere in the field set (e.g. nested Accounts[i].Transactions). These
+  // surface under the "Records" sub-header. Computed against the FULL field
+  // set (not the filtered view) so search/filter doesn't toggle the section.
+  const orphanSynthTables = React.useMemo(() => {
+    const tabularNames = new Set(
+      fields.filter(isTabularField).map((f) => f.name)
+    );
+    return tables.filter(
+      (t) =>
+        t.source === "Synthesized" &&
+        (t.name === null || !tabularNames.has(t.name))
+    );
+  }, [fields, tables]);
+
   const handleExportCsv = React.useCallback(() => {
     exportFieldsAsCsv(fields, fileName);
   }, [fields, fileName]);
@@ -155,28 +205,52 @@ export function Inspector({
                 <span>{group}</span>
                 <span className={styles.groupCount}>{list.length}</span>
               </div>
-              {list.map((f) => (
-                <InspectorField
-                  key={f.id}
-                  field={f}
-                  selected={f.id === selectedFieldId}
-                  onSelect={onSelectField}
-                  onUpdate={onUpdateField}
-                  onDelete={onDeleteField}
-                />
-              ))}
+              {list.map((f) => {
+                if (isTabularField(f)) {
+                  const synthTable = synthTableByName.get(f.name) ?? null;
+                  return (
+                    <InspectorTabularRow
+                      key={f.id}
+                      label={f.name}
+                      tableId={synthTable?.id ?? null}
+                      rowCount={synthTable ? dataRowCount(synthTable) : 0}
+                      active={
+                        synthTable !== null &&
+                        synthTable.id === activeTableId
+                      }
+                      onSelect={onSelectTable}
+                    />
+                  );
+                }
+                return (
+                  <InspectorField
+                    key={f.id}
+                    field={f}
+                    selected={f.id === selectedFieldId}
+                    onSelect={onSelectField}
+                    onUpdate={onUpdateField}
+                    onDelete={onDeleteField}
+                  />
+                );
+              })}
             </section>
           ))
         )}
 
-        {tables.length > 0 && (
-          <InspectorTablesSection
-            tables={tables}
+        {orphanSynthTables.length > 0 && (
+          <RecordsSection
+            tables={orphanSynthTables}
             activeTableId={activeTableId}
             onSelectTable={onSelectTable}
-            onExportTable={onExportTable}
           />
         )}
+
+        <InspectorTablesSection
+          tables={tables}
+          activeTableId={activeTableId}
+          onSelectTable={onSelectTable}
+          onExportTable={onExportTable}
+        />
       </div>
 
       <footer className={styles.footer}>
@@ -298,5 +372,55 @@ function FilterPill({
     >
       {children}
     </button>
+  );
+}
+
+interface RecordsSectionProps {
+  tables: ExtractedTable[];
+  activeTableId: string | null;
+  onSelectTable: (id: string) => void;
+}
+
+/**
+ * Phase G "Records" sub-header — surfaces synth tables that have no parent
+ * field row (typically nested arrays like Accounts[i].Transactions). Visual
+ * twin of the Tables section, intentionally placed above it so the related
+ * "structured data" sections cluster together at the bottom of the field list.
+ */
+function RecordsSection({
+  tables,
+  activeTableId,
+  onSelectTable,
+}: RecordsSectionProps) {
+  return (
+    <section className="border-t border-line">
+      <header
+        className={cn(
+          "flex items-center gap-2",
+          "px-3.5 pt-3 pb-1.5",
+          "text-[10.5px] font-semibold uppercase tracking-[0.06em]",
+          "text-ink-3"
+        )}
+      >
+        <span aria-hidden className="w-1.5 h-1.5 rounded-full bg-table" />
+        <span>Records</span>
+        <span className="font-mono font-medium text-ink-4 text-[11px]">
+          {tables.length}
+        </span>
+      </header>
+
+      <div className="pb-2">
+        {tables.map((table) => (
+          <InspectorTabularRow
+            key={table.id}
+            label={table.name ?? `Table ${table.index + 1}`}
+            tableId={table.id}
+            rowCount={dataRowCount(table)}
+            active={table.id === activeTableId}
+            onSelect={onSelectTable}
+          />
+        ))}
+      </div>
+    </section>
   );
 }

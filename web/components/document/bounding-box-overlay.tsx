@@ -48,9 +48,37 @@ export function BoundingBoxOverlay({
   const activeTable = activeTableId
     ? tables.find((t) => t.id === activeTableId) ?? null
     : null;
-  const tableRegion = activeTable
-    ? regionOnPage(activeTable.boundingRegions, pageNumber)
-    : null;
+
+  // Layout tables get a single labelled outline framing the whole table area
+  // (Azure DI's detected visual structure). Synthesized tables get one
+  // outline per row instead, mirroring DI Studio's structured-array
+  // visualisation — the bbox union of a synth table is misleading because
+  // its rows hold scattered scalar fields.
+  const layoutTableRegion =
+    activeTable && activeTable.source === "Layout"
+      ? regionOnPage(activeTable.boundingRegions, pageNumber)
+      : null;
+
+  const synthRowRegions =
+    activeTable && activeTable.source === "Synthesized"
+      ? activeTable.boundingRegions.filter((r) => r.pageNumber === pageNumber)
+      : [];
+
+  // Per-cell fallback: when Azure didn't give us row geometry (bank-statement
+  // Transactions and similar), iterate every cell on this page so the user
+  // still sees what's covered by the active synth table. Header cells emit
+  // empty bbox arrays from the synthesizer, so they self-skip via the filter.
+  const synthCellRegions =
+    activeTable && activeTable.source === "Synthesized" && synthRowRegions.length === 0
+      ? activeTable.cells.flatMap((c) =>
+          c.boundingRegions.filter((r) => r.pageNumber === pageNumber)
+        )
+      : [];
+
+  // At most one of these is non-empty — the row set takes precedence when
+  // Azure provided it. Single render path keeps the JSX uncluttered.
+  const synthRegions =
+    synthRowRegions.length > 0 ? synthRowRegions : synthCellRegions;
 
   // Cell highlight is independent of activeTableId — selection.tableId is the
   // truth. (It will usually match activeTableId, but we don't depend on that.)
@@ -107,14 +135,29 @@ export function BoundingBoxOverlay({
 
       {/* Active-table outline — passive amber rect framing the table region.
           pointer-events:none so it never blocks field clicks underneath. */}
-      {activeTable && tableRegion && (
+      {activeTable && layoutTableRegion && (
         <TableOutline
-          region={tableRegion}
+          region={layoutTableRegion}
           pageWidthPoints={pageWidthPoints}
           pageHeightPoints={pageHeightPoints}
-          label={`Table ${activeTable.index + 1}`}
+          label={activeTable.name ?? `Table ${activeTable.index + 1}`}
         />
       )}
+
+      {/* Synthesised-table region outlines on this page. When Azure provided
+          per-item geometry (invoice Items, bank-statement Accounts) we draw
+          one box per row; otherwise (bank-statement Transactions) we fall
+          back to per-cell boxes so the user still sees what's covered.
+          Pointer-events:none, no label, lighter weight than the layout
+          TableOutline so a stack of N boxes doesn't visually dominate. */}
+      {synthRegions.map((region, i) => (
+        <SyntheticRegionOutline
+          key={i}
+          region={region}
+          pageWidthPoints={pageWidthPoints}
+          pageHeightPoints={pageHeightPoints}
+        />
+      ))}
 
       {/* Selected-cell highlight — stronger amber outline. Sibling of the
           table outline so the cell sits visually above the table frame. */}
@@ -166,6 +209,43 @@ function TableOutline({ region, pageWidthPoints, pageHeightPoints, label }: Tabl
         {label}
       </span>
     </div>
+  );
+}
+
+interface SyntheticRegionOutlineProps {
+  region: BoundingRegion;
+  pageWidthPoints: number;
+  pageHeightPoints: number;
+}
+
+/**
+ * Subtle outline for a synthesised-table region — used for both per-row
+ * geometry (when Azure provided it) and the per-cell fallback (when Azure
+ * didn't). Drawn lighter than the layout `TableOutline` and unlabelled so
+ * a stack of N outlines reads as context rather than primary chrome.
+ */
+function SyntheticRegionOutline({
+  region,
+  pageWidthPoints,
+  pageHeightPoints,
+}: SyntheticRegionOutlineProps) {
+  const bbox = polygonToPercentBBox(region.polygon, pageWidthPoints, pageHeightPoints);
+  if (!bbox) return null;
+
+  return (
+    <div
+      className={cn(
+        "absolute pointer-events-none rounded-[2px]",
+        "border border-table",
+        "bg-[color-mix(in_oklab,var(--color-table)_5%,transparent)]"
+      )}
+      style={{
+        left: `${bbox.x}%`,
+        top: `${bbox.y}%`,
+        width: `${bbox.w}%`,
+        height: `${bbox.h}%`,
+      }}
+    />
   );
 }
 

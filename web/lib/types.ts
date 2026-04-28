@@ -10,7 +10,11 @@ export type FieldDataType =
   | "email"
   | "phone"
   | "address"
-  | "enum";
+  | "enum"
+  /** Phase G: synthetic placeholder for `List<Dictionary>` fields (Items,
+   *  Accounts, …). The Inspector renders this as a clickable opener for
+   *  the corresponding synth table rather than an inline-editable value. */
+  | "Tabular";
 
 export type ConfidenceLevel = "high" | "med" | "low";
 
@@ -117,6 +121,15 @@ export interface TableCell {
   boundingRegions: BoundingRegion[];
 }
 
+/**
+ * Where the table came from. Phase G surfaces the two sources in different
+ * parts of the Inspector: `Layout` tables render in the "Tables" section
+ * (visual structure detected on the page); `Synthesized` tables come from
+ * `List<Dictionary>` structured fields and are bound to a parent Tabular
+ * field row (or the "Records" sub-header for nested orphans).
+ */
+export type TableSource = "Layout" | "Synthesized";
+
 export interface ExtractedTable {
   id: string;
   /** 0-based detection order — preserves Azure DI's sequence across reloads. */
@@ -125,6 +138,11 @@ export interface ExtractedTable {
   pageNumber: number;
   rowCount: number;
   columnCount: number;
+  source: TableSource;
+  /** Always set for Synthesized tables (matches the originating field name,
+   *  with `[N]` suffix for nested-leaf collisions). Null for Layout tables —
+   *  the UI labels them "Table N" by detection order. */
+  name: string | null;
   boundingRegions: BoundingRegion[];
   cells: TableCell[];
 }
