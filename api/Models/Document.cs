@@ -20,6 +20,7 @@ public class Document
     public Template? Template { get; set; }
 
     public List<ExtractedField> ExtractedFields { get; set; } = new();
+    public List<ExtractedTable> ExtractedTables { get; set; } = new();
 }
 
 public enum DocumentStatus

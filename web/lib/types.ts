@@ -10,7 +10,11 @@ export type FieldDataType =
   | "email"
   | "phone"
   | "address"
-  | "enum";
+  | "enum"
+  /** Phase G: synthetic placeholder for `List<Dictionary>` fields (Items,
+   *  Accounts, …). The Inspector renders this as a clickable opener for
+   *  the corresponding synth table rather than an inline-editable value. */
+  | "Tabular";
 
 export type ConfidenceLevel = "high" | "med" | "low";
 
@@ -89,6 +93,66 @@ export interface DocumentResponse {
   templateId: string | null;
   templateName: string | null;
   fields: ExtractedField[];
+  tables: ExtractedTable[];
+}
+
+/**
+ * Azure Document Intelligence's table-cell role. The wire shape stores it as
+ * a string (the SDK uses an extensible-enum struct on the .NET side); we
+ * mirror that so future custom-model roles flow through without a type bump.
+ */
+export type TableCellKind =
+  | "content"
+  | "columnHeader"
+  | "rowHeader"
+  | "stubHead"
+  | "description";
+
+export interface TableCell {
+  rowIndex: number;
+  columnIndex: number;
+  /** Defaults to 1 — the backend normalizes Azure's null spans on extract. */
+  rowSpan: number;
+  columnSpan: number;
+  kind: TableCellKind | string;
+  content: string | null;
+  /** Flips true on the user's first PATCH; never reverts. */
+  isCorrected: boolean;
+  boundingRegions: BoundingRegion[];
+}
+
+/**
+ * Where the table came from. Phase G surfaces the two sources in different
+ * parts of the Inspector: `Layout` tables render in the "Tables" section
+ * (visual structure detected on the page); `Synthesized` tables come from
+ * `List<Dictionary>` structured fields and are bound to a parent Tabular
+ * field row (or the "Records" sub-header for nested orphans).
+ */
+export type TableSource = "Layout" | "Synthesized";
+
+export interface ExtractedTable {
+  id: string;
+  /** 0-based detection order — preserves Azure DI's sequence across reloads. */
+  index: number;
+  /** First page the table appears on; multi-page tables fan out via boundingRegions. */
+  pageNumber: number;
+  rowCount: number;
+  columnCount: number;
+  source: TableSource;
+  /** Always set for Synthesized tables (matches the originating field name,
+   *  with `[N]` suffix for nested-leaf collisions). Null for Layout tables —
+   *  the UI labels them "Table N" by detection order. */
+  name: string | null;
+  boundingRegions: BoundingRegion[];
+  cells: TableCell[];
+}
+
+/** PATCH body for a single table cell. (rowIndex, columnIndex) addresses
+ *  merged cells via their top-left position — Azure DI's convention. */
+export interface TableCellUpdate {
+  rowIndex: number;
+  columnIndex: number;
+  content: string | null;
 }
 
 export interface DocumentSummary {

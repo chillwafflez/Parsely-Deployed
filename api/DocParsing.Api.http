@@ -4,10 +4,21 @@
 GET {{base}}/api/documents
 
 ### Get a document by id
-GET {{base}}/api/documents/REPLACE_WITH_GUID
+GET {{base}}/api/documents/2cc08edd-07bd-4c9a-8bbf-c8dd72ece379
 
 ### Download original file
 GET {{base}}/api/documents/REPLACE_WITH_GUID/file
+
+### Update a single table cell. Use top-left coordinates for merged cells.
+### content=null clears the cell. IsCorrected flips true on first edit.
+PATCH {{base}}/api/documents/REPLACE_WITH_DOC_GUID/tables/REPLACE_WITH_TABLE_GUID/cells
+Content-Type: application/json
+
+{
+  "rowIndex": 1,
+  "columnIndex": 1,
+  "content": "Custom .NET integration adapter (revised)"
+}
 
 ### List templates (grab a TemplateId for the voice/fill request below)
 GET {{base}}/api/templates

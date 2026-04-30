@@ -7,6 +7,8 @@ import type {
   FieldCreate,
   FieldUpdate,
   SpeechToken,
+  TableCell,
+  TableCellUpdate,
   Template,
   TemplateApplyMode,
   TemplateExportPayload,
@@ -132,6 +134,35 @@ export async function deleteField(
     const body = await res.text();
     throw new Error(`Delete failed (${res.status}): ${body || res.statusText}`);
   }
+}
+
+/**
+ * PATCH a single table cell. Returns the updated cell so the caller can
+ * reconcile optimistic state with whatever the server normalized (none today,
+ * but future-proof). 404 for unknown table id; 400 for out-of-range coords.
+ */
+export async function updateTableCell(
+  documentId: string,
+  tableId: string,
+  update: TableCellUpdate
+): Promise<TableCell> {
+  const res = await fetch(
+    `${API_BASE}/api/documents/${documentId}/tables/${tableId}/cells`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(update),
+    }
+  );
+
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(
+      `Update cell failed (${res.status}): ${body || res.statusText}`
+    );
+  }
+
+  return res.json();
 }
 
 export async function listTemplates(): Promise<TemplateSummary[]> {

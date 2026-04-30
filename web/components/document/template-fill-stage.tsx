@@ -383,8 +383,6 @@ export function TemplateFillStage({ template }: TemplateFillStageProps) {
         <PdfDocumentView
           fileUrl={sourcePdfUrl}
           fields={[]}
-          selectedFieldId={null}
-          onSelectField={() => {}}
           zoom={zoom}
           onPagesLoaded={setNumPages}
           drawMode={false}

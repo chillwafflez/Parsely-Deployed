@@ -43,6 +43,7 @@ public class DocumentsController(
     {
         var doc = await db.Documents
             .Include(d => d.ExtractedFields)
+            .Include(d => d.ExtractedTables)
             .Include(d => d.Template)
             .FirstOrDefaultAsync(d => d.Id == id, ct);
 
@@ -141,6 +142,37 @@ public class DocumentsController(
                     BoundingRegionsJson = f.BoundingRegions.Count == 0
                         ? null
                         : JsonSerializer.Serialize(f.BoundingRegions),
+                });
+            }
+
+            foreach (var t in extraction.Tables)
+            {
+                document.ExtractedTables.Add(new ExtractedTable
+                {
+                    Id = Guid.NewGuid(),
+                    DocumentId = document.Id,
+                    Index = t.Index,
+                    PageNumber = t.PageNumber,
+                    RowCount = t.RowCount,
+                    ColumnCount = t.ColumnCount,
+                    Source = t.Source,
+                    Name = t.Name,
+                    BoundingRegionsJson = t.BoundingRegions.Count == 0
+                        ? null
+                        : JsonSerializer.Serialize(ToRegionResponses(t.BoundingRegions)),
+                    // Project service-layer cells into the wire/storage shape so
+                    // TableResponse.FromEntity round-trips cleanly. IsCorrected
+                    // starts false and flips on the first user edit.
+                    CellsJson = JsonSerializer.Serialize(
+                        t.Cells.Select(c => new TableCellResponse(
+                            RowIndex: c.RowIndex,
+                            ColumnIndex: c.ColumnIndex,
+                            RowSpan: c.RowSpan,
+                            ColumnSpan: c.ColumnSpan,
+                            Kind: c.Kind,
+                            Content: c.Content,
+                            IsCorrected: false,
+                            BoundingRegions: ToRegionResponses(c.BoundingRegions))).ToList()),
                 });
             }
 
@@ -366,6 +398,61 @@ public class DocumentsController(
         return Ok(ExtractedFieldResponse.FromEntity(field));
     }
 
+    [HttpPatch("{documentId:guid}/tables/{tableId:guid}/cells")]
+    public async Task<ActionResult<TableCellResponse>> UpdateTableCell(
+        Guid documentId,
+        Guid tableId,
+        [FromBody] UpdateTableCellRequest request,
+        CancellationToken ct)
+    {
+        var table = await db.ExtractedTables
+            .FirstOrDefaultAsync(t => t.Id == tableId && t.DocumentId == documentId, ct);
+
+        if (table is null) return NotFound();
+
+        if (request.RowIndex < 0 || request.RowIndex >= table.RowCount ||
+            request.ColumnIndex < 0 || request.ColumnIndex >= table.ColumnCount)
+        {
+            return BadRequest(new { error = "Cell coordinates out of range." });
+        }
+
+        var cells = JsonSerializer.Deserialize<List<TableCellResponse>>(table.CellsJson)
+                    ?? new List<TableCellResponse>();
+
+        // Cells are addressed by (row, col) — for merged cells, that's the
+        // top-left position (Azure's convention; the frontend resolves clicks
+        // anywhere in the merged region back to top-left before sending).
+        var index = cells.FindIndex(c =>
+            c.RowIndex == request.RowIndex && c.ColumnIndex == request.ColumnIndex);
+
+        if (index < 0)
+        {
+            return NotFound(new { error = "Cell not found at the given coordinates." });
+        }
+
+        var existing = cells[index];
+
+        // No-op when content is unchanged — preserves IsCorrected as-is so a
+        // re-save of the original value doesn't visually flag a clean cell.
+        if (existing.Content == request.Content)
+        {
+            return Ok(existing);
+        }
+
+        var updated = existing with
+        {
+            Content = request.Content,
+            IsCorrected = true,
+        };
+
+        cells[index] = updated;
+        table.CellsJson = JsonSerializer.Serialize(cells);
+
+        await db.SaveChangesAsync(ct);
+
+        return Ok(updated);
+    }
+
     /// <summary>
     /// Picks layout words whose center point falls inside the rule's
     /// axis-aligned bounding region, concatenates them, and averages their
@@ -443,6 +530,12 @@ public class DocumentsController(
 
         return cx >= bounds.MinX && cx <= bounds.MaxX && cy >= bounds.MinY && cy <= bounds.MaxY;
     }
+
+    private static List<BoundingRegionResponse> ToRegionResponses(
+        IReadOnlyList<BoundingRegionData> regions) =>
+        regions
+            .Select(r => new BoundingRegionResponse(r.PageNumber, r.Polygon.ToArray()))
+            .ToList();
 
     private static string GuessContentType(string fileName) => Path.GetExtension(fileName).ToLowerInvariant() switch
     {

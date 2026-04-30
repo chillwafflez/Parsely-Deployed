@@ -5,7 +5,8 @@ import dynamic from "next/dynamic";
 import { FileText, Square, ZoomIn, ZoomOut } from "lucide-react";
 import { Button, Kbd } from "../ui/button";
 import { cn } from "@/lib/cn";
-import type { DrawResult, ExtractedField } from "@/lib/types";
+import type { DrawResult, ExtractedField, ExtractedTable } from "@/lib/types";
+import type { Selection } from "@/lib/selection";
 
 // Dynamically import the PDF rendering module with ssr: false. Per react-pdf
 // docs, the worker config must live in the same module as <Document>/<Page>
@@ -23,8 +24,10 @@ interface DocumentPaneProps {
   fileUrl: string;
   fileName: string;
   fields: ExtractedField[];
-  selectedFieldId: string | null;
-  onSelectField: (id: string | null) => void;
+  tables: ExtractedTable[];
+  selection: Selection | null;
+  activeTableId: string | null;
+  onSelect: (selection: Selection | null) => void;
   onDrawComplete: (result: DrawResult) => void;
 }
 
@@ -36,8 +39,10 @@ export function DocumentPane({
   fileUrl,
   fileName,
   fields,
-  selectedFieldId,
-  onSelectField,
+  tables,
+  selection,
+  activeTableId,
+  onSelect,
   onDrawComplete,
 }: DocumentPaneProps) {
   const [zoom, setZoom] = React.useState(1);
@@ -145,8 +150,10 @@ export function DocumentPane({
         <PdfDocumentView
           fileUrl={fileUrl}
           fields={fields}
-          selectedFieldId={selectedFieldId}
-          onSelectField={onSelectField}
+          tables={tables}
+          selection={selection}
+          activeTableId={activeTableId}
+          onSelect={onSelect}
           zoom={zoom}
           onPagesLoaded={setNumPages}
           drawMode={drawMode}
