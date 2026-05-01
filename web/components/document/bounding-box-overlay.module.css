@@ -99,6 +99,28 @@
   background: var(--color-err);
 }
 
+/* Aggregation source override — purple regardless of confidence so an
+   aggregation field stays visually identified end-to-end (drawing → modal →
+   persisted bbox). Source order beats the [data-confidence] rules above at
+   equal specificity, so these wins. The confidence percentage still shows
+   in the tag/aria-label and the low-confidence "!" badge still fires. */
+.bbox[data-source="aggregation"] {
+  border-color: var(--color-agg);
+  background: color-mix(in oklab, var(--color-agg) 12%, transparent);
+}
+.bbox[data-source="aggregation"]:hover {
+  background: color-mix(in oklab, var(--color-agg) 20%, transparent);
+}
+.selected[data-source="aggregation"] {
+  border-color: var(--color-agg);
+  background: color-mix(in oklab, var(--color-agg) 22%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--color-agg) 22%, transparent);
+}
+.bbox[data-source="aggregation"] .tag {
+  background: var(--color-agg);
+  color: white;
+}
+
 /* Low-confidence exclamation badge */
 .warn {
   position: absolute;

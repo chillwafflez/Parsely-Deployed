@@ -385,7 +385,7 @@ export function TemplateFillStage({ template }: TemplateFillStageProps) {
           fields={[]}
           zoom={zoom}
           onPagesLoaded={setNumPages}
-          drawMode={false}
+          drawMode={null}
           onDrawComplete={() => {}}
           renderPageOverlay={({
             pageNumber,

@@ -101,6 +101,7 @@ export function BoundingBoxOverlay({
 
         const level = confidenceLevel(field.confidence);
         const isSelected = field.id === selectedFieldId;
+        const isAggregation = field.aggregationConfig !== null;
         const confidenceLabel = `${(field.confidence * 100).toFixed(0)}%`;
 
         return (
@@ -109,6 +110,7 @@ export function BoundingBoxOverlay({
             key={field.id}
             className={cn(styles.bbox, isSelected && styles.selected)}
             data-confidence={level}
+            data-source={isAggregation ? "aggregation" : undefined}
             style={{
               left: `${bbox.x}%`,
               top: `${bbox.y}%`,

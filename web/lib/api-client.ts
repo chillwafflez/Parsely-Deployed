@@ -1,4 +1,7 @@
 import type {
+  AggregationPreviewRequest,
+  AggregationPreviewResponse,
+  CreateAggregationPayload,
   CreateTemplatePayload,
   DocumentResponse,
   DocumentSummary,
@@ -159,6 +162,62 @@ export async function updateTableCell(
     const body = await res.text();
     throw new Error(
       `Update cell failed (${res.status}): ${body || res.statusText}`
+    );
+  }
+
+  return res.json();
+}
+
+/**
+ * Filters layout words inside the polygon and returns the parsed numeric
+ * tokens. Lazy-backfills the layout blob on first call for legacy documents
+ * uploaded before the layout-persistence feature shipped.
+ */
+export async function previewAggregation(
+  documentId: string,
+  payload: AggregationPreviewRequest
+): Promise<AggregationPreviewResponse> {
+  const res = await fetch(
+    `${API_BASE}/api/documents/${documentId}/aggregations/preview`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }
+  );
+
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(
+      `Aggregation preview failed (${res.status}): ${body || res.statusText}`
+    );
+  }
+
+  return res.json();
+}
+
+/**
+ * Commits a new aggregation field on the document. When the document has a
+ * matched template, the backend also auto-promotes a TemplateAggregationRule
+ * so future uploads replay the aggregation.
+ */
+export async function createAggregation(
+  documentId: string,
+  payload: CreateAggregationPayload
+): Promise<ExtractedField> {
+  const res = await fetch(
+    `${API_BASE}/api/documents/${documentId}/aggregations`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }
+  );
+
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(
+      `Create aggregation failed (${res.status}): ${body || res.statusText}`
     );
   }
 

@@ -45,7 +45,8 @@ public record ExtractedFieldResponse(
     bool IsRequired,
     bool IsCorrected,
     bool IsUserAdded,
-    IReadOnlyList<BoundingRegionResponse> BoundingRegions)
+    IReadOnlyList<BoundingRegionResponse> BoundingRegions,
+    AggregationFieldConfig? AggregationConfig)
 {
     public static ExtractedFieldResponse FromEntity(ExtractedField f)
     {
@@ -53,6 +54,10 @@ public record ExtractedFieldResponse(
             ? new List<BoundingRegionResponse>()
             : JsonSerializer.Deserialize<List<BoundingRegionResponse>>(f.BoundingRegionsJson)
               ?? new List<BoundingRegionResponse>();
+
+        var aggregation = string.IsNullOrWhiteSpace(f.AggregationConfigJson)
+            ? null
+            : JsonSerializer.Deserialize<AggregationFieldConfig>(f.AggregationConfigJson);
 
         return new ExtractedFieldResponse(
             Id: f.Id,
@@ -63,7 +68,8 @@ public record ExtractedFieldResponse(
             IsRequired: f.IsRequired,
             IsCorrected: f.IsCorrected,
             IsUserAdded: f.IsUserAdded,
-            BoundingRegions: regions);
+            BoundingRegions: regions,
+            AggregationConfig: aggregation);
     }
 }
 

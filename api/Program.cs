@@ -22,6 +22,7 @@ builder.Services.AddSingleton<IDocumentIntelligenceService, DocumentIntelligence
 builder.Services.AddSingleton<ISpeechTokenProvider, SpeechTokenProvider>();
 builder.Services.AddSingleton<IVoiceFillService, VoiceFillService>();
 builder.Services.AddSingleton<IBlobStorageService, BlobStorageService>();
+builder.Services.AddSingleton<ILayoutStorageService, LayoutStorageService>();
 
 var sqlConnectionString = builder.Configuration.GetConnectionString("Default");
 if (string.IsNullOrWhiteSpace(sqlConnectionString))

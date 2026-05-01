@@ -23,5 +23,14 @@ public class ExtractedField
     /// </summary>
     public bool IsUserAdded { get; set; }
 
+    /// <summary>
+    /// Serialized aggregation provenance ({operation, sourceTokenCount,
+    /// evaluatedAt}) for fields produced by the aggregation feature. Null on
+    /// every other field. Presence — not <see cref="DataType"/> — is the
+    /// authoritative "is this an aggregation?" signal so users can still
+    /// override the displayed type via the type popover.
+    /// </summary>
+    public string? AggregationConfigJson { get; set; }
+
     public Document Document { get; set; } = null!;
 }

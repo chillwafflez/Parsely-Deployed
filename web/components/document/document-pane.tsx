@@ -2,11 +2,18 @@
 
 import * as React from "react";
 import dynamic from "next/dynamic";
-import { FileText, Square, ZoomIn, ZoomOut } from "lucide-react";
+import { ChevronDown, FileText, Sigma, Square, ZoomIn, ZoomOut } from "lucide-react";
 import { Button, Kbd } from "../ui/button";
 import { cn } from "@/lib/cn";
-import type { DrawResult, ExtractedField, ExtractedTable } from "@/lib/types";
+import type {
+  DrawCompletion,
+  DrawMode,
+  DrawResult,
+  ExtractedField,
+  ExtractedTable,
+} from "@/lib/types";
 import type { Selection } from "@/lib/selection";
+import { DrawingToolsPopover } from "./drawing-tools-popover";
 
 // Dynamically import the PDF rendering module with ssr: false. Per react-pdf
 // docs, the worker config must live in the same module as <Document>/<Page>
@@ -28,12 +35,27 @@ interface DocumentPaneProps {
   selection: Selection | null;
   activeTableId: string | null;
   onSelect: (selection: Selection | null) => void;
-  onDrawComplete: (result: DrawResult) => void;
+  onDrawComplete: (completion: DrawCompletion) => void;
 }
 
 const ZOOM_STEP = 0.1;
 const ZOOM_MIN = 0.6;
 const ZOOM_MAX = 1.8;
+
+const MODE_LABEL: Record<DrawMode, string> = {
+  field: "field",
+  aggregation: "aggregation",
+};
+
+const MODE_ICON: Record<DrawMode, React.ReactNode> = {
+  field: <Square size={14} />,
+  aggregation: <Sigma size={14} />,
+};
+
+const MODE_SHORTCUT: Record<DrawMode, string> = {
+  field: "F",
+  aggregation: "A",
+};
 
 export function DocumentPane({
   fileUrl,
@@ -47,23 +69,43 @@ export function DocumentPane({
 }: DocumentPaneProps) {
   const [zoom, setZoom] = React.useState(1);
   const [numPages, setNumPages] = React.useState<number | null>(null);
-  const [drawMode, setDrawMode] = React.useState(false);
+  const [drawMode, setDrawMode] = React.useState<DrawMode | null>(null);
+  // Photoshop-style "remember last selected" — clicking the toolbar button
+  // when off re-enters whichever mode the user last picked from the popover.
+  const [lastSelectedMode, setLastSelectedMode] = React.useState<DrawMode>("field");
+  const [popoverOpen, setPopoverOpen] = React.useState(false);
 
   const zoomOut = () => setZoom((z) => Math.max(ZOOM_MIN, +(z - ZOOM_STEP).toFixed(2)));
   const zoomIn = () => setZoom((z) => Math.min(ZOOM_MAX, +(z + ZOOM_STEP).toFixed(2)));
 
-  const toggleDrawMode = React.useCallback(() => setDrawMode((v) => !v), []);
+  // Toolbar button click — toggle off if active, otherwise enter the
+  // most-recently-selected mode.
+  const toggleDrawMode = React.useCallback(() => {
+    setDrawMode((current) => (current ? null : lastSelectedMode));
+  }, [lastSelectedMode]);
 
-  // When a drag completes, auto-exit draw mode and bubble the result up.
+  // Picking a mode from the popover always activates it (and remembers it
+  // for next time). Switching directly between modes never goes through "off".
+  const handleSelectMode = React.useCallback((mode: DrawMode) => {
+    setLastSelectedMode(mode);
+    setDrawMode(mode);
+    setPopoverOpen(false);
+  }, []);
+
+  // Tag draw results with the active mode before bubbling up so ReviewStage
+  // can route to the correct post-draw modal.
   const handleDrawComplete = React.useCallback(
     (result: DrawResult) => {
-      setDrawMode(false);
-      onDrawComplete(result);
+      const mode = drawMode;
+      if (!mode) return; // Defensive — DrawingLayer only renders when drawMode != null.
+      setDrawMode(null);
+      onDrawComplete({ ...result, mode });
     },
-    [onDrawComplete]
+    [drawMode, onDrawComplete]
   );
 
-  // Keyboard shortcuts: B toggles draw mode, Escape exits it.
+  // F → field, A → aggregation, Escape exits any active mode. Reuses the
+  // existing input-guard so typing in field values doesn't toggle the toolbar.
   React.useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLElement) {
@@ -73,17 +115,35 @@ export function DocumentPane({
           e.target.isContentEditable;
         if (editable) return;
       }
-      if (e.key === "b" || e.key === "B") {
+      if (e.key === "Escape" && drawMode) {
         e.preventDefault();
-        toggleDrawMode();
-      } else if (e.key === "Escape" && drawMode) {
+        setDrawMode(null);
+        return;
+      }
+      if (e.key === "f" || e.key === "F") {
         e.preventDefault();
-        setDrawMode(false);
+        setLastSelectedMode("field");
+        setDrawMode((current) => (current === "field" ? null : "field"));
+      } else if (e.key === "a" || e.key === "A") {
+        e.preventDefault();
+        setLastSelectedMode("aggregation");
+        setDrawMode((current) => (current === "aggregation" ? null : "aggregation"));
       }
     };
     document.addEventListener("keydown", handler);
     return () => document.removeEventListener("keydown", handler);
-  }, [drawMode, toggleDrawMode]);
+  }, [drawMode]);
+
+  // Display state for the split button — what's shown reflects what would
+  // happen on click.
+  const displayMode = drawMode ?? lastSelectedMode;
+  const isActive = drawMode !== null;
+  const buttonLabel = isActive
+    ? `Cancel ${MODE_LABEL[drawMode!]}`
+    : `Draw ${MODE_LABEL[displayMode]}`;
+  const buttonTitle = isActive
+    ? `Exit ${MODE_LABEL[drawMode!]} mode (Esc)`
+    : `Draw a new ${MODE_LABEL[displayMode]} (${MODE_SHORTCUT[displayMode]})`;
 
   return (
     <section
@@ -134,16 +194,40 @@ export function DocumentPane({
           <ZoomIn size={14} />
         </Button>
         <div className="w-px h-5 bg-line mx-1" />
-        <Button
-          active={drawMode}
-          onClick={toggleDrawMode}
-          aria-pressed={drawMode}
-          title={drawMode ? "Exit draw mode (Esc)" : "Draw a new field region (B)"}
-        >
-          <Square size={14} />
-          {drawMode ? "Cancel draw" : "Draw field"}
-          {!drawMode && <Kbd>B</Kbd>}
-        </Button>
+        {/* Split button: main entry toggles the current mode; chevron opens
+            the popover to switch modes. Wrapped in a relative container so
+            the popover can anchor to its right edge. */}
+        <div className="relative flex items-center">
+          <Button
+            active={isActive}
+            onClick={toggleDrawMode}
+            aria-pressed={isActive}
+            title={buttonTitle}
+            className="rounded-r-none"
+          >
+            {MODE_ICON[displayMode]}
+            {buttonLabel}
+            {!isActive && <Kbd>{MODE_SHORTCUT[displayMode]}</Kbd>}
+          </Button>
+          <Button
+            active={isActive}
+            onClick={() => setPopoverOpen((v) => !v)}
+            aria-label="Switch drawing tool"
+            aria-haspopup="menu"
+            aria-expanded={popoverOpen}
+            className="rounded-l-none border-l border-line/60 px-1.5"
+            title="Switch tool"
+          >
+            <ChevronDown size={13} />
+          </Button>
+          {popoverOpen && (
+            <DrawingToolsPopover
+              activeMode={drawMode}
+              onSelect={handleSelectMode}
+              onClose={() => setPopoverOpen(false)}
+            />
+          )}
+        </div>
       </header>
 
       <div className="flex-1 overflow-auto min-h-0">

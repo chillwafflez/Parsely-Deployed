@@ -4,9 +4,11 @@ import * as React from "react";
 import { DocumentPane } from "./document-pane";
 import { TableDrawer } from "./table-drawer";
 import { Inspector } from "../inspector/inspector";
+import { AggregationModal } from "../modal/aggregation-modal";
 import { NameFieldModal } from "../modal/name-field-modal";
 import { SaveTemplateModal } from "../modal/save-template-modal";
 import {
+  createAggregation,
   createField,
   createTemplate,
   deleteField,
@@ -26,8 +28,9 @@ import {
   type Selection,
 } from "@/lib/selection";
 import type {
+  AggregationOperation,
   DocumentResponse,
-  DrawResult,
+  DrawCompletion,
   ExtractedField,
   FieldDataType,
   FieldUpdate,
@@ -65,7 +68,7 @@ export function ReviewStage({ document, onDocumentChange }: ReviewStageProps) {
    * drawer can stay open while the user inspects an unrelated field.
    */
   const [activeTableId, setActiveTableId] = React.useState<string | null>(null);
-  const [pendingDraw, setPendingDraw] = React.useState<DrawResult | null>(null);
+  const [pendingDraw, setPendingDraw] = React.useState<DrawCompletion | null>(null);
   const [showSaveTemplate, setShowSaveTemplate] = React.useState(false);
 
   const selectedFieldId = selectedFieldIdOf(selection);
@@ -264,8 +267,8 @@ export function ReviewStage({ document, onDocumentChange }: ReviewStageProps) {
     [exportTable]
   );
 
-  const handleDrawComplete = React.useCallback((result: DrawResult) => {
-    setPendingDraw(result);
+  const handleDrawComplete = React.useCallback((completion: DrawCompletion) => {
+    setPendingDraw(completion);
   }, []);
 
   const handleCancelDraw = React.useCallback(() => {
@@ -274,7 +277,7 @@ export function ReviewStage({ document, onDocumentChange }: ReviewStageProps) {
 
   const handleSubmitDraw = React.useCallback(
     async (draft: { name: string; dataType: FieldDataType; isRequired: boolean }) => {
-      if (!pendingDraw) return;
+      if (!pendingDraw || pendingDraw.mode !== "field") return;
       try {
         const created = await createField(document.id, {
           name: draft.name,
@@ -292,6 +295,39 @@ export function ReviewStage({ document, onDocumentChange }: ReviewStageProps) {
       }
     },
     [document.id, onDocumentChange, pendingDraw, showToast]
+  );
+
+  const handleSubmitAggregation = React.useCallback(
+    async (draft: {
+      name: string;
+      operation: AggregationOperation;
+      isRequired: boolean;
+    }) => {
+      if (!pendingDraw || pendingDraw.mode !== "aggregation") return;
+      try {
+        const created = await createAggregation(document.id, {
+          name: draft.name,
+          operation: draft.operation,
+          isRequired: draft.isRequired,
+          pageNumber: pendingDraw.pageNumber,
+          polygon: pendingDraw.polygon,
+        });
+        onDocumentChange((prev) => ({ ...prev, fields: [...prev.fields, created] }));
+        setSelection({ kind: "field", fieldId: created.id });
+        setPendingDraw(null);
+        showToast(
+          document.templateId
+            ? `${draft.operation} added — template will replay this on future uploads`
+            : `${draft.operation} added`
+        );
+      } catch (err) {
+        showToast(
+          err instanceof Error ? err.message : "Create aggregation failed",
+          "err"
+        );
+      }
+    },
+    [document.id, document.templateId, onDocumentChange, pendingDraw, showToast]
   );
 
   const handleOpenSaveTemplate = React.useCallback(() => {
@@ -387,11 +423,21 @@ export function ReviewStage({ document, onDocumentChange }: ReviewStageProps) {
           onExportJson={handleExportTableJson}
         />
       )}
-      {pendingDraw && (
+      {pendingDraw?.mode === "field" && (
         <NameFieldModal
           bbox={pendingDraw.bbox}
           onCancel={handleCancelDraw}
           onSubmit={handleSubmitDraw}
+        />
+      )}
+      {pendingDraw?.mode === "aggregation" && (
+        <AggregationModal
+          documentId={document.id}
+          pageNumber={pendingDraw.pageNumber}
+          polygon={pendingDraw.polygon}
+          bbox={pendingDraw.bbox}
+          onCancel={handleCancelDraw}
+          onSubmit={handleSubmitAggregation}
         />
       )}
       {showSaveTemplate && (
