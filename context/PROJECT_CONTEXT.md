@@ -641,15 +641,83 @@ Vercel → Settings → Git → Deploy Hooks → created `harness-main-deploy` f
 
 **Verified:** ACA revision running healthy, live Vercel URL passes upload + extract + persist end-to-end, all 11 ACA env vars + 5 secrets wired correctly, GitHub repo has full `main` history mirrored.
 
+### Day 16 ✅ — Table extraction Phase G (synthesised tables) *(2026-04-28)*
+
+End-to-end shipped via the `feat/table-extraction` branch. Two channels surfaced in two parts of the UI: layout-detected `result.Tables` in the Inspector "Tables" section; structured `List<Dictionary>` fields synthesised into Tabular field rows + an orphan "Records" sub-header. **Full chronology + revert lessons + per-document verification matrix lives in `context/IDEAS.md` §3** (which doubles as the Phase G design doc — kept there to avoid duplication).
+
+**Schema change** — `Add_ExtractedTable_Source_And_Name` migration adds `Source` + `Name` columns to `ExtractedTables`, defaults pre-existing rows to `Source = "Layout"`. Additive; no `rm app.db*` needed.
+
+**Files added (full list in IDEAS.md §3):**
+- `api/Models/TableSources.cs`, `api/Services/AzureFieldMapping.cs`, `api/Services/TableSynthesizer.cs`
+- `api/Migrations/20260428204306_Add_ExtractedTable_Source_And_Name.cs`
+- `web/components/inspector/inspector-tabular-row.tsx`
+
+**Commits (on `feat/table-extraction`, merged 2026-05-01 as squash `01b9cd3` → see Day 17):**
+- `d063361 feat(api): synthesize tables from List<Dictionary> structured fields (Phase G)`
+- `4cf20da feat(web): tabular field rows + Records section + per-row synth outlines`
+
+### Day 17 ✅ — Custom aggregation field feature *(2026-04-30 → 2026-05-01)*
+
+Tier 1 #3.1(b) shipped end-to-end on the `feat/custom-aggregation-field` branch, then squash-merged to `main` as `01b9cd3 feat: custom aggregation field to perform operations on extracted numerical data (#3)`. The same merge picked up Day 16's Phase G commits (which had been pushed to the same branch lineage).
+
+**UX departure from the original IDEAS.md sketch:** rejected the column-header kebab in favor of a **draw-region** model. User picks `Draw aggregation` from the toolbar dropdown (or hits `A`), drags a region on the document, the modal opens with a live preview of detected numbers, picks Sum / Average / Count / Min / Max, saves. Result lands as a regular `ExtractedField` with `AggregationConfigJson` set; when the document has a matched template, an equivalent `TemplateAggregationRule` is auto-promoted so future uploads replay it. End-to-end purple visual identity (drawing rectangle → modal accents → persisted bbox) via new `--color-agg{,-weak,-border,-ink}` tokens.
+
+**Why draw-region beat column-header (decided up-front):**
+1. **Strict superset** — clean table column is a special case of a region; the user can draw over the column for the same result.
+2. **Demo punch** — column-header is what every parsing tool already does (Excel-like); draw-region is the differentiator and pairs naturally with the existing draw-to-add-field story.
+3. **Same cost** — entity, modal, parser are needed either way; the "extra" cost is one additional draw mode in the toolbar, and the pattern was already proven by `Draw field`.
+
+**Backend (committed in three commits before squash):**
+
+- **Layout JSON blob persistence** (`feat(api): persist document layout JSON for spatial features`):
+  - `api/Services/{ILayoutStorageService,LayoutStorageService}.cs` — persists `PageExtraction[]` as `<id>-layout.json` next to the original PDF in the existing `uploads` container. `GetOrBackfillAsync` lazy-runs `prebuilt-layout` for legacy documents on first read (one-time per legacy doc).
+  - `api/Services/PolygonGeometry.cs` — extracted from `DocumentsController` so both template-rule extraction and aggregation share one containment helper. New `WordsInsideRegion(words, polygon) → matched`.
+  - `DocumentsController.Upload` writes the layout blob after Azure DI succeeds. Wrapped in inner try/catch — failure is non-fatal (warning log + continue), the document still completes, and the missing layout backfills lazily on first spatial query.
+  - **Storage choice — blob, not SQL** (per Microsoft's own guidance via context7): opaque read-whole payload is exactly what Blob Storage exists for; ~6× cheaper than Azure SQL GP storage; avoids the EF Core "every Find()/AsQueryable() pulls fat columns by default" footgun; parallels the existing PDF blob naming. The SQL alternative would have used EF Core 10's new native JSON column type — well-tooled, but designed for queryable JSON, and we never query inside the layout.
+- **Aggregation feature** (`feat(api): aggregation field draw-region capture + template replay`):
+  - `api/Aggregations/` — `NumberTokenParser` (handles `$1,234.56`, `(123.45)`, `12.5%`, mixed sign+currency orders), `AggregationOperation` enum, `AggregationCompute` (Compute + Format + TryParseOperation), `AggregationEvaluator` (single-source pipeline used by both save + template-replay so the math can never drift).
+  - `api/Models/TemplateAggregationRule.cs` — **separate entity, not a Kind discriminator on `TemplateFieldRule`**. Decision called out before coding; chosen for SRP (no nullable columns whose validity depends on a kind), cleaner replay (each rule type has its own loop), and future-proofing (#2 field validation will attach to `TemplateFieldRule` without further nullable columns).
+  - New nullable `ExtractedField.AggregationConfigJson` column — `{operation, sourceTokenCount, evaluatedAt}`. **Presence — not `DataType` — is the authoritative "is this an aggregation?" signal** so users can override the displayed type via the popover without losing the marker.
+  - Single migration `Add_Aggregation_Tables` (additive — no `rm app.db*`). Adds `AggregationConfigJson` and a `TemplateAggregationRules` table with cascade FK.
+  - New `AggregationsController` — `POST /api/documents/{id}/aggregations/preview` returns parsed tokens for the modal; `POST /api/documents/{id}/aggregations` recomputes server-side from layout (canonical), persists field, and **auto-promotes to a template rule when the document has a matched template** (no user-facing toggle — the modal copy promised this behavior).
+  - `DocumentsController.ApplyTemplateRules` extended with `ApplyAggregationRules` — replays each rule on every future matching upload via the same `AggregationEvaluator`. Skips when a field with the same name already exists (don't overwrite user edits).
+  - `TemplatesController.Create` partitions source-doc fields by `AggregationConfigJson` presence: aggregation fields → `TemplateAggregationRule`, others → `TemplateFieldRule`. `Get`/`Duplicate` updated to load + clone aggregation rules. `Update` deliberately ignores aggregation rules for v1 (they persist through edits untouched — no regression).
+- **Tests** — first test project in the repo: `tests/DocParsing.Api.Tests/` (xUnit v3 per current Microsoft Learn guidance verified via context7), .NET 10, **78 tests** covering parser / compute / evaluator. `bin/`/`obj/` patterns broadened to repo-wide in `.gitignore` so the rule covers tests + future projects.
+
+**Frontend (single squashed commit `feat(web): draw-region aggregation fields with live preview modal`):**
+
+- `web/components/document/drawing-tools-popover.tsx` — split-button dropdown with Field / Aggregation / Table-disabled rows. The Table slot is pre-wired (disabled with "soon" hint) so #3.1(a) plugs in without toolbar restructuring.
+- `DocumentPane` refactored: `drawMode: boolean` → `drawMode: DrawMode | null` where `DrawMode = "field" | "aggregation"`. Photoshop-style "remember last selected" — clicking the main button when off re-enters the most-recent mode. **`B` shortcut dropped, replaced with `F` (field) and `A` (aggregation)**, same input-field guard as before.
+- `DrawCompletion = DrawResult & { mode }` discriminated union bubbles up from `DrawingLayer` through `DocumentPane` to `ReviewStage`, which routes the post-draw modal off `pendingDraw.mode`.
+- `DrawingLayer` accepts `mode` — purple tint for aggregation, accent for field. Per-mode hint copy.
+- `AggregationModal` — name + 5-card op grid + region pill + live preview card. Calls `previewAggregation` once on mount; switches Sum/Avg/Count/Min/Max locally on op toggle (no extra round-trips). Concat / Formula / output-type / decimals / exclude-negatives toggles deliberately dropped per scoping decisions; Required is the only "advanced" option, inlined next to the name.
+- `BoundingBoxOverlay` — aggregation fields rendered with purple bbox via `data-source="aggregation"` CSS Modules override of the confidence-color classes. Confidence pct still shows in the tag and the low-confidence `!` badge still fires.
+- New `--color-agg{,-weak,-border,-ink}` tokens in `globals.css` — same `oklch` pattern as Phase G `--color-table-*`. Used by drawing preview rect, modal accents, and the persisted bbox so visual identity stays consistent end-to-end.
+
+**Open polish items deferred (cheap to add later, all non-blocking):**
+
+- **Stale-on-cell-edit indicator** — `AggregationConfig.evaluatedAt` carries the timestamp; cheap to flag stale + add a "Recalculate" link.
+- **Inspector "CUSTOM — AGGREGATIONS" group** — backend already surfaces `aggregationConfig` on the field response; the planned Inspector redesign will consume it.
+- **Edit/Delete aggregations on the template edit page** — currently aggregation rules persist through `PUT /templates/:id` untouched but aren't editable. ~½-day extension.
+- **Concat / Formula** ops, **Export/Import** support — explicitly deferred for v1.
+
+**Commits and merge:**
+- `e7efaeb feat(api): persist document layout JSON for spatial features`
+- `7a34ec7 feat(api): aggregation field draw-region capture + template replay`
+- `69e2bb6 feat(web): draw-region aggregation fields with live preview modal`
+- Squash-merged to Harness `origin/main` as `01b9cd3` on 2026-05-01. **GitHub `main` was force-pushed to mirror Harness `main` afterward** to resolve the squash-merge dual-remote collision (see §7 Deployment gotcha).
+
+**Verified:** `dotnet build` clean (0 warnings, 0 errors); `dotnet test` 78/78 passing in 53–61ms; `pnpm build` clean (7 routes); `pnpm lint` 0 warnings; manual smoke test against invoice line items (user confirmed working).
+
 ---
 
 ## 6. What's next — runway
 
-Demo is **2026-05-29** (~5 weeks out as of 2026-04-23 — user extended the original 2026-04-29 deadline by a month, so the pressure is off; invest in feature depth rather than shipping-MVP-and-polishing). All three core value props are functional (parse, correct, teach-via-template), URL routing works, history page exists, template CRUD + management surface complete, polish pass done, components/ folder reorganized, Tailwind migration mostly complete (see Day 9 outstanding), Voice-Fill feature complete, PDF export matured (CropBox-correct + local-background-sampled masks).
+Demo is **2026-05-29** (~4 weeks out as of 2026-05-01). All three core value props are functional (parse, correct, teach-via-template), URL routing works, history page exists, template CRUD + management surface complete, polish pass done, components/ folder reorganized, Tailwind migration mostly complete (see Day 9 outstanding), Voice-Fill feature complete, PDF export matured (CropBox-correct + local-background-sampled masks), table extraction Phases A–G shipped, **Tier 1 #3.1(b) aggregation fields shipped (Day 17)**. Tier 1 remaining: **#3.1(a) draw-to-add tables** (next), **#2 field validation rules**, **#4 AI transformation rules**.
 
 ### Near-term decisions
 
-1. **`LastUsedAt` on templates — decide now or defer.** Sidebar currently caps "top 6 recent" by `CreatedAt`, which means heavily-used older templates fall off as the library grows. Upgrading to `LastUsedAt` is cheap: one nullable column on `Template`, a one-line write in `TemplateFillLoader` on template load, and the sidebar `slice` switches its sort key. Cost: `rm api/app.db*` (wipes all saved templates + uploaded docs). The cost only grows as more real templates accumulate, so decide early if yes.
+1. **`LastUsedAt` on templates — decide now or defer.** Sidebar currently caps "top 6 recent" by `CreatedAt`, which means heavily-used older templates fall off as the library grows. Upgrading to `LastUsedAt` is cheap: one nullable column on `Template`, a one-line write in `TemplateFillLoader` on template load, and the sidebar `slice` switches its sort key. Now an additive migration (not `rm app.db*`) since Day 14 introduced EF migrations — the cost is much lower than the original framing suggested.
 
 ### Demo-critical
 
@@ -664,8 +732,9 @@ Demo is **2026-05-29** (~5 weeks out as of 2026-04-23 — user extended the orig
 4. **"Edit template" button on the fill stage** — quick jump from `/templates/:id/new` into `/templates/:id/edit`. Trivial now that the edit page exists; `TEMPLATES_PAGE.md` §7 recommended it.
 5. **Search / filter on the documents table.** Filename search, template-match filter, sortable columns. DocumentList is presentation-only today.
 6. **Fix template-delete staleness for the currently-viewed document.** Add `refreshDocument` to `AppShellContext`; DocumentLoader exposes it. Sidebar's delete handler calls it when `activeTemplateId === deletedId`.
-7. **Line Items dedicated renderer.** Azure DI's `Items` field is a list-of-dictionaries currently shown as raw content. Design mock has a mini-table in the Inspector.
+7. **Line Items dedicated renderer.** Azure DI's `Items` field is a list-of-dictionaries currently shown as raw content. Design mock has a mini-table in the Inspector. (Partially addressed by Phase G's Tabular row + drawer — leftover work is the inline mini-table style.)
 8. **Voice-fill Phase 4 polish leftovers** — space-bar mic toggle (with input-field guarding), `aria-live` on voice state changes, `role="region"` on the stage. Small items to round out the feature.
+9. **Aggregation polish leftovers** (from Day 17) — stale-on-cell-edit indicator, Inspector "CUSTOM — AGGREGATIONS" group (waiting on Inspector redesign), Edit/Delete aggregations on the template edit page, Concat / Formula ops, Export/Import support. All non-blocking.
 
 ### Deferred to Phase 2 (post-demo)
 
@@ -691,7 +760,7 @@ Demo is **2026-05-29** (~5 weeks out as of 2026-04-23 — user extended the orig
 
 **Secrets rotation.** User Secrets is the canonical path. `dotnet user-secrets set "DocumentIntelligence:Key" "..."` in `api/`. `appsettings.json` stays with empty strings. Two key leaks happened on 2026-04-20; user rotated each time.
 
-**Schema changes require `rm api/app.db*` (no migrations).** Every backend schema change so far (`IsRequired`, `IsUserAdded`, `Templates` + `TemplateFieldRules` + `Document.TemplateId`) required a dev DB reset. Uploaded docs are lost. Files in `api/uploads/` become orphaned.
+**Schema changes through Day 13 required `rm api/app.db*`** (no migrations existed yet). **Day 14 introduced EF Core migrations** with the `Initial` migration capturing the SQLite-era schema; from that point on, additive schema changes go through `dotnet ef migrations add <name>`, no DB reset needed (`Add_Template_ModelId`, `Add_ExtractedTables`, `Add_ExtractedTable_Source_And_Name`, `Add_Aggregation_Tables` all applied cleanly via `Migrate()`). Older (pre-migration) schema lessons in this gotcha file remain useful context but no longer apply procedurally.
 
 **Azure DI prebuilt models include layout for free.** `prebuilt-invoice`, `prebuilt-receipt`, etc. all return both structured `Documents` and word-level `Pages` in a single `AnalyzeDocumentAsync` call. We use this in Day 6b for template-region text extraction — no extra Azure call, no cost increase.
 
@@ -787,6 +856,8 @@ Demo is **2026-05-29** (~5 weeks out as of 2026-04-23 — user extended the orig
 
 **Buffer-once pattern for upload + downstream processing.** When a controller needs to both persist an `IFormFile` AND pass it to a downstream service (e.g., upload to blob + analyze with DI), copy to `MemoryStream` once, then re-position before each consumer. Avoids the IFormFile-multiple-read uncertainty AND the redundancy of upload-then-redownload. See `DocumentsController.Upload` (Day 14 lesson).
 
+**Squash-merge dual-remote collision (Harness ↔ GitHub) — Day 17 lesson.** Vercel only integrates with GitHub, so we keep both remotes mirrored (`origin` = Harness, `github` = GitHub). When the user squash-merges a PR on Harness, `origin/main` gets a single new commit with a fresh SHA. If the user *also* squash-merges the same PR on GitHub independently, `github/main` gets a *different* SHA with the same content. Repeat that across PRs and the two `main`s diverge by content-equivalent-but-distinct commits. The next PR's feature branch (built atop one side's `main`) will then conflict against the other side because git replays the same change set twice through the divergent histories. **Rule going forward: only ever squash-merge on Harness, then `git push github main --force-with-lease` to mirror.** Treat GitHub PRs as branch-push targets only — never click "Merge" there. The auth/source-of-truth is always Harness; GitHub is a downstream mirror for Vercel. If you're already in the divergent state, `--force-with-lease` GitHub `main` to match Harness `main` is the cleanest fix (GitHub branch protection may require temporarily allowing force pushes — toggle in Settings → Branches → main).
+
 ---
 
 ## 8. Security notes
@@ -857,42 +928,42 @@ The UI draws 1:1 from the Claude Design mock exported to `Document Parsing Servi
 
 ## 11. Where we left off
 
-**2026-04-26 end of session (Day 15 — Phase 2 + 3 deployment execution):**
+**2026-05-01 end of session (Day 17 — custom aggregation field feature):**
 
-- Days 1–13 feature work complete and committed to `main`. Demo date still **2026-05-29**; ~5 weeks runway.
-- **Phase 1 of deployment committed** Day 14 (commits `c9a1c73`, `63c0fa5`, `9f0817a`).
-- **Phase 2 done end-to-end Day 15.** Container App `docparsing-api` is live in `taia-commission-env`, healthy, serving traffic. Hybrid CLI + portal pattern was the working approach (CLI for create, portal Settings → Secrets for the 5 secrets, CLI for the 11 env vars). Smoke tests passed: `GET /api/documents` → 200 [], `POST /api/documents/upload` → extracted-fields JSON.
-- **SQL provisioning swapped Day 15.** Original §13.4 plan was right after all: dedicated `docparsing-sql` server (West US — East US blocked by subscription policy), `docparsing-db` migrated cleanly via ACA `Migrate()`. Orphaned `docparsing-db` dropped from shared `taia-ams-sql`. Live ACA + local dev both pointed at the new server.
-- **Phase 3 step 9 done Day 15.** Vercel project deployed via private GitHub mirror (Vercel doesn't integrate with Harness Code). Browser-tested end-to-end: live Vercel URL → upload PDF → DI extracts fields → SQL persists → reload shows entry. Vercel deploy hook for `main` branch created and saved locally for Phase 3 step 10.
-- **Next pickup is Phase 3 step 10**: Harness pipeline YAML (CI: `BuildAndPushToACR`; CD: `az containerapp update --image` + `curl POST <vercel-deploy-hook>`). See §13.6 step 10 for prerequisites + Harness secrets needed.
+- Tier 1 progress: **#1 ✅, #3 ✅ (Phases A–G), #3.1(b) ✅ (this session)**, #3.1(a) 🔲 next, #2 🔲, #4 🔲.
+- Demo date still **2026-05-29** (~4 weeks runway).
+- **Day 16 (Phase G of #3) shipped 2026-04-28.** Synthesised tables from `List<Dictionary>` structured fields, conditional-parallel layout fallback, per-row outlines with per-cell fallback. Two commits: `d063361` (api), `4cf20da` (web). Originally undocumented in PROJECT_CONTEXT.md; back-filled this session with a Day 16 entry pointing at IDEAS.md §3 for the chronology.
+- **Day 17 (this session)** — draw-region aggregation fields shipped. Three logical commits: `e7efaeb feat(api): persist document layout JSON for spatial features`, `7a34ec7 feat(api): aggregation field draw-region capture + template replay`, `69e2bb6 feat(web): draw-region aggregation fields with live preview modal`. Squash-merged to Harness `origin/main` as `01b9cd3` (which also folded in Day 16's commits via the same branch lineage). User browser-tested and confirmed working.
+- **Schema migration `Add_Aggregation_Tables`** is live: nullable `ExtractedField.AggregationConfigJson` column + `TemplateAggregationRules` table with cascade FK. Additive — no `rm app.db*` needed.
+- **First test project landed:** `tests/DocParsing.Api.Tests/` with xUnit v3, .NET 10, **78 tests** covering `NumberTokenParser` / `AggregationCompute` / `AggregationEvaluator`. `bin/`/`obj/` patterns broadened to repo-wide in `.gitignore`.
+- **Squash-merge dual-remote collision (Harness ↔ GitHub)** hit and resolved at end of session — see new gotcha in §7 Deployment. GitHub `main` was force-pushed via `--force-with-lease` to mirror Harness `main`. Going forward: only ever squash-merge on Harness, then mirror to GitHub.
+- **Phase 3 step 10 (Harness pipeline YAML) still pending** — same status as end of Day 15. Manual `git push origin main && git push github main` workflow continues until the pipeline automates the mirror.
 - **Day 9 Tailwind migration still partial** — `document/bounding-box-overlay`, both `inspector/*` files, and `app/page.module.css` remain on CSS Modules. Untouched this session.
 
 ### Current git state
 
-- Working tree clean. No application code changes Day 15 — entirely Azure + Vercel + Git config work, nothing to commit.
-- New remote `github` added Day 15 alongside existing `origin` (Harness Code). Future workflow: `git push origin main && git push github main` until Harness pipeline automates the mirror.
+- Working tree clean. Working branch was `feat/custom-aggregation-field`; squashed and merged to `main` as `01b9cd3`.
+- Both remotes' `main` now point at `01b9cd3` (Harness directly via squash merge, GitHub via force-pushed mirror).
 
 ### First actions for the next session
 
-1. **Use context7 against Harness docs** for current pipeline YAML schema (the format shifts version-to-version). Specifically: `BuildAndPushToACR` step parameters, secret references syntax, multi-stage pipeline structure.
-2. **Confirm Azure service principal availability.** The CD stage's `az containerapp update` needs SP credentials (clientID + clientSecret + tenantID) with at least Contributor on `cr-rg-prod-taia`. If user doesn't have RBAC owner perms, lead must create the SP. Same permissions story as the ACA env on Day 14.
-3. **Set up Harness secrets:**
-   - ACR admin password (`az acr credential show -n docparsingacr --query passwords[0].value -o tsv`)
-   - Azure SP credentials (3 values)
-   - Vercel deploy hook URL (saved locally end of Day 15)
-4. **Draft pipeline YAML** with CI stage (BuildAndPushToACR) + CD stage (two Run steps for ACA swap + Vercel hook). Reference image tag should be `${pipeline.sequenceId}` for traceable versions, replacing the Day-14 `:bootstrap` snapshot tag.
-5. **Trivial test push** once pipeline lands — bump a comment somewhere, push to both `origin` and `github`, watch full CI → CD → live-app-update flow.
-6. **`use context7`** for any Harness / Tailwind v4 / Next.js 15 / React 19 / pdf-lib / Azure CLI uncertainty.
+1. **Read IDEAS.md §3.1(a)** — the next feature is draw-to-add tables for templates. The toolbar's `Draw table` slot is already pre-wired (disabled with "soon" hint) so the feature plugs in cleanly.
+2. **UX sketch first** before coding §3.1(a) — the toolbar's already in good shape but the template edit page grows substantially (table-rule list + region preview). Get user sign-off on a paper/mock pass before backend code.
+3. **Pick up #2 field validation rules** after §3.1(a) — sketch in IDEAS.md §2; ~1-day surface.
+4. **Use context7** for any library uncertainty, especially Azure DI's region-clipping behavior if the table feature uses per-region layout calls.
 
-### Patterns established this session (Day 14 — reuse, don't reinvent)
+### Patterns established this session (Day 17 — reuse, don't reinvent)
 
-- **`Microsoft.Extensions.Azure` `AddAzureClients(...)` for any Azure SDK client.** Industry-standard DI pattern. Lifecycle managed by Microsoft. We use it for `BlobServiceClient`; future Service Bus / Key Vault / Cosmos clients should follow the same pattern.
-- **Buffer-once pattern for upload + downstream processing.** When a controller needs to both persist an `IFormFile` AND pass it to a downstream service, copy to `MemoryStream` once, then re-position before each consumer. Avoids the IFormFile-multiple-read uncertainty AND the redundancy of upload-then-redownload. Used in `DocumentsController.Upload`.
-- **`Try*` over `Exists*` for blob/SQL-style "fetch or 404" flows.** `IBlobStorageService.TryOpenReadAsync` returns `Stream?`; caller checks `null` → 404. Single round trip vs. existence-check + get pattern. Same pattern fits `BlobClient` (catch `RequestFailedException ex when ex.Status == 404`).
-- **Fail-fast on missing config at app startup**, with a friendly error pointing at the right resolution path (user-secrets for dev, env var for prod). Used for `ConnectionStrings:Default` and `ConnectionStrings:BlobStorage`. Matches existing pattern from `DocumentIntelligenceService` validation.
-- **`SetIsOriginAllowedToAllowWildcardSubdomains()` for Vercel-style preview deploys.** Single CORS config entry like `https://*-yourteam.vercel.app` covers all preview branches. Microsoft's documented pattern. Avoid raw `SetIsOriginAllowed(callback)` unless wildcard-subdomain doesn't fit the case.
-- **`dotnet-ef` as a local tool via `.config/dotnet-tools.json`** rather than global install. Pins the EF version per-repo; reproducible in CI; no machine-wide pollution. Restored on a fresh checkout via `dotnet tool restore`.
-- **Multi-stage Dockerfile with `aspnet:10.0` runtime + `USER $APP_UID`.** Non-root by default, port 8080 pre-set, layer-cached restore. Template applies to any future .NET service we containerize.
+- **Layout JSON persistence as a sibling blob** (`<id>-layout.json`) — opaque, read-whole, never queried into. Use the same pattern for any future spatial byproduct (OCR text dumps, page thumbnails, etc.) that doesn't need to be queryable in SQL. `IBlobStorageService` already supports it; just add a wrapping service like `ILayoutStorageService` for type-aware persistence.
+- **Lazy-backfill helper for legacy data.** `GetOrBackfillAsync(id, originalBlobName)` checks for the persisted artifact and reconstructs it from the source if missing. Simpler than a one-shot migration script for prototype scale; the cost is one extra Azure DI call per legacy doc, paid once.
+- **Single evaluator for save + replay paths.** When two callsites need to compute "the same thing from the same inputs" (e.g., aggregation save endpoint + template-rule replay on upload), extract a pure-function evaluator and call it from both. Math/lookup logic can never drift between the two. Pattern in `AggregationEvaluator.Evaluate`.
+- **Separate entity over Kind discriminator** when adding a parallel concept (template rules, here). Calls out tradeoffs explicitly: SRP, no nullable columns whose validity depends on a kind, cleaner replay loops. Future #2 field validation rules go on `TemplateFieldRule` (their natural home); #3.1(a) draw-to-add tables get their own `TemplateTableRule` if/when shipped.
+- **Presence over `DataType` for marker fields.** `ExtractedField.AggregationConfigJson != null` signals "this is an aggregation" rather than `DataType == "Aggregation"` so users can override the displayed type via the popover without losing the marker.
+- **Auto-promote on save when a parent context exists.** The aggregation save endpoint creates a `TemplateAggregationRule` automatically if `document.Template != null` — no user-facing toggle. Modal copy explicitly promised "future docs will get this," and the simplest way to honor that is to make it implicit.
+- **Photoshop-style "remember last selected" mode.** `DocumentPane` keeps `lastSelectedMode` so the toolbar button always reflects the most recent intent. Clicking when off re-enters that mode; clicking when on exits. Per-mode keyboard shortcuts (`F`/`A`/`T`) jump directly. Pattern fits any multi-mode tool.
+- **Dedicated CSS color tokens per feature surface.** `--color-agg{,-weak,-border,-ink}` joins `--color-table-*` (Phase G) and the per-confidence `--color-{ok,warn,err}` palette. Single source of truth for each feature's color identity, used end-to-end (drawing → modal → bbox).
+- **Inner try/catch for non-fatal side effects in the upload pipeline.** Layout-blob save is wrapped so a blob outage can't block the whole upload — the document still completes, the layout backfills lazily on first read. Same pattern fits any future "nice to have but not required to complete the operation" step.
+- **xUnit v3 (not v2) for new .NET test projects.** Per current Microsoft Learn guidance via context7. Project setup: `Exe` output type, `<Using Include="Xunit" />`, `xunit.v3` + `xunit.runner.visualstudio` + `Microsoft.NET.Test.Sdk` packages, `tests/` at repo root (not under `api/`).
 
 ### Patterns from prior days still in heavy use
 
@@ -901,23 +972,21 @@ The UI draws 1:1 from the Claude Design mock exported to `Document Parsing Servi
 - **Table aesthetic**: `document-list.tsx` or `templates-table.tsx` (Day 12) — `group`/`group-hover:bg-accent-weak`, shared `BODY_CELL` const, kebab column via portaled menu.
 - **Portaled action menu**: `template-row-actions.tsx` — portal to `document.body`, `onClick={(e) => e.stopPropagation()}` on the root to prevent bubbling back through the React tree, document-level mousedown listener to close on outside click.
 - **Modal for destructive confirm**: `modal/delete-template-modal.tsx` works as-is.
-- **Input class constants**: `template-metadata-form.tsx` exports `LABEL_CLASS` / `INPUT_CLASS` / `TEXTAREA_CLASS`; `save-template-modal.tsx` has matching + `SEG_*` variants (now reused in `upload-stage.tsx`).
+- **Input class constants**: `template-metadata-form.tsx` exports `LABEL_CLASS` / `INPUT_CLASS` / `TEXTAREA_CLASS`; `save-template-modal.tsx` and `aggregation-modal.tsx` reuse the same constants + `SEG_*` variants.
 - **Placeholder consolidation**: `template-fill-placeholder.tsx` + `template-edit-placeholder.tsx` + `templates-placeholder.tsx` — each co-locates loading skeleton + error + not-found panels in one file, imported from `loading.tsx` + `not-found.tsx` route conventions + the loader component.
 - **Pessimistic save with snapshot rollback**: `template-edit-stage.tsx` — `JSON.stringify` dirty check, rollback to snapshot on error, beforeunload guard for tab close, window.confirm for in-app Cancel.
+- **Buffer-once pattern for upload + downstream** (Day 14): single `MemoryStream`, repositioned before each consumer.
+- **`Microsoft.Extensions.Azure.AddAzureClients(...)` for Azure SDK clients** (Day 14).
 
 ### Open deferred items (for reference)
 
-- **Finish Day 9 Tailwind migration** — `document/bounding-box-overlay` + `inspector/*` (both files) + `app/page.module.css`. No blockers; pattern is well-established; estimate ~half-day.
-- **Excel field export** — deferred from Day 13 Part A. If added later, use **ExcelJS** (MIT, actively maintained, ~1MB) with a lazy import to keep the initial bundle lean. **Do not use SheetJS (`xlsx`)** — it switched to SSPL at v0.18.5, which is legally murky for commercial SaaS.
+- **Finish Day 9 Tailwind migration** — `document/bounding-box-overlay` (touched in Day 17 with `[data-source="aggregation"]` overrides but still on CSS Modules) + `inspector/*` (both files) + `app/page.module.css`. No blockers; pattern well-established; ~half-day.
+- **Excel field export** — deferred from Day 13 Part A. If added later, use **ExcelJS** (MIT, actively maintained, ~1MB) with a lazy import. **Do not use SheetJS (`xlsx`)** — SSPL at v0.18.5+ is legally murky for commercial SaaS.
 - **Seed demo documents** — still not done. §6 item 2.
-- **Required-field export warning** — §6 item 3.
-- **"Edit template" button on fill stage** — §6 item 4.
-- **Search / filter on documents table** — §6 item 5.
-- **Template-delete staleness** on the currently-viewed document — §6 item 6.
-- **Line Items table special-render** — §6 item 7.
-- **Voice Phase 4 polish leftovers** (space-bar, aria-live, role=region) — §6 item 8.
-- **`LastUsedAt` column** — §6 item 1 near-term decision.
-- **Revert button, font matching on export, Teams wrapper, auth, cloud storage, custom-model training, layout-fingerprint matching, compliance layer** — all Phase 2.
+- **Required-field export warning, "Edit template" button, search/filter on documents table, template-delete staleness, Line Items renderer, Voice Phase 4 polish, `LastUsedAt`** — §6 items.
+- **Aggregation polish leftovers** — §6 item 9 (added this session).
+- **Harness pipeline YAML** — §13.6 step 10.
+- **Revert button, font matching on export, Teams wrapper, auth, custom-model training, layout-fingerprint matching, compliance layer** — all Phase 2.
 
 ---
 

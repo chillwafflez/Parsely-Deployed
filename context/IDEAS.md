@@ -1,15 +1,27 @@
 # Feature Ideas — Roadmap
 
-> Last updated **2026-04-28** — Phase G of #3 shipped: synthesised tables
-> from `List<Dictionary>` structured fields, conditional-parallel layout
-> fallback, per-row outlines with per-cell fallback, named drawer tabs.
-> **#3.1** (draw-to-add tables for templates + column aggregations) is the
-> next thing to build — see the expanded §3.1 below for backend / frontend
-> sketches and recommended order.
+> Last updated **2026-05-01** — **#3.1(b) shipped as draw-region
+> aggregations**: user picks `Draw aggregation` from the toolbar dropdown
+> (or hits `A`), drags a region over numbers, and the modal computes
+> Sum / Average / Count / Min / Max with a live preview. Result lands as
+> an `ExtractedField` with `AggregationConfigJson` set; when the document
+> has a matched template, an equivalent `TemplateAggregationRule` is
+> auto-promoted so future uploads replay the aggregation. End-to-end purple
+> visual identity (drawing → modal → bbox).
+>
+> **Implementation diverged from the original §3.1(b) sketch in one
+> meaningful way:** the column-header kebab approach was dropped in favor
+> of a draw-region UX (Photoshop/Figma-style mode switching with `F`/`A`
+> shortcuts and a split-button popover), because draw-region works on
+> non-tabular number groups too and is the demo-grade differentiator.
+> The §3.1(b) section below is rewritten to match what shipped.
+>
+> **#3.1(a)** (draw-to-add tables for templates) is the next thing to
+> build, followed by **#2** (field validation rules). See sections below.
 >
 > The full architecture / day-by-day history lives in
-> `context/PROJECT_CONTEXT.md` — note that file is stale on Phase G and
-> needs a refresh next session (no Day 16 entry yet for Phase G work).
+> `context/PROJECT_CONTEXT.md` — Day 17 covers this session's aggregation
+> work; Day 16 covers Phase G of #3 (which had been undocumented there).
 > This file is the forward-looking backlog — read it first if you're
 > picking up where we left off.
 
@@ -23,7 +35,9 @@
 |---|---|---|
 | 1 | Multi-document-type support | ✅ **Shipped** (sub-phases 1A → 1D) |
 | 2 | Field validation rules | 🔲 Not started |
-| 3 | Table extraction + CSV export | ✅ **Phases A–G shipped** — #3.1 follow-ups still open (next up) |
+| 3 | Table extraction + CSV export | ✅ **Phases A–G shipped** |
+| 3.1(a) | Draw-to-add tables for templates | 🔲 Not started — **next up** |
+| 3.1(b) | Aggregation fields (draw-region rollups) | ✅ **Shipped** as draw-region UX (not column-header) |
 | 4 | AI transformation rules | 🔲 Not started |
 
 **Tier 2 — good but compete for time:**
@@ -246,13 +260,13 @@ multi-account bank statement:
 
 ---
 
-### #3.1 Additional Table Extraction features — **next session pickup**
+### #3.1 Additional Table Extraction features
 
-Two distinct sub-features. Recommended order: (b) first (smaller, cleaner
-UX, demoable on its own; gives users something to *do* with the tables we
-just shipped), then (a) (bigger lift, deserves UX sketching first).
+Two distinct sub-features. (b) shipped 2026-04-30 → 2026-05-01 with a
+different UX than originally sketched (see "How #3.1(b) actually shipped"
+below). (a) is the next session pickup.
 
-#### (a) Draw-to-add tables for templates
+#### (a) Draw-to-add tables for templates — **next session pickup**
 
 **Goal:** Mirror the existing draw-to-add fields workflow but for tables.
 User enters a "draw table" mode → drags a bbox on the source document →
@@ -299,60 +313,141 @@ extract a table from that area.
   pane (ghosted PDF view) so the user sees what they're saving.
 
 **UX risk** — IDEAS.md flagged this from the start: "the page will not
-feel cluttered or unintuitive." The toolbar grows from `Draw field` → 2
-modes; the template edit page grows; needs design thinking before code.
-Recommend a paper sketch / mock pass before implementation.
+feel cluttered or unintuitive." The toolbar grows from `Draw field` →
+3 modes (Field / Aggregation / **Table**); a `Draw table` slot is
+already wired up as disabled in the dropdown popover so adding (a)
+slots in cleanly. The template edit page also grows. Recommend a paper
+sketch / mock pass before implementation.
 
-#### (b) Column aggregations
+#### (b) Aggregation fields — **shipped 2026-04-30 → 2026-05-01**
 
-**Goal:** Let users select a column in any synth or layout table → pick
-Sum / Average / Count / Min / Max → name the output → result becomes a
-computed field on the document (e.g., `Balance Sum`, `Transaction Avg`).
+**What shipped:** draw-region UX (rejected the original column-header
+kebab proposal). User enters `Draw aggregation` mode (toolbar dropdown
+or `A` shortcut), drags a region on the document, the
+`AggregationModal` opens with a live preview of detected numbers and
+the computed result, user picks `Sum / Average / Count / Min / Max`,
+saves, result lands as a regular `ExtractedField` with
+`AggregationConfigJson` set.
 
-**Estimated effort:** ~1–1.5 days. Smaller surface, contained UX.
+**Why draw-region beat column-header (decided 2026-04-30):**
 
-**Backend sketch:**
+1. **Strict superset.** A clean table column is just a special case of
+   a region — user can draw the region right over the column and get
+   the same result. Column-header doesn't generalize backward.
+2. **Demo punch.** Column-header is what every parsing tool already
+   does (Excel-like). Draw-region is the differentiator — pairs
+   naturally with the existing draw-to-add-field story ("teach the AI
+   new fields *and* new computations").
+3. **Costs the same.** New entity + modal + parser are needed either
+   way; "extra" cost was just adding a second draw mode to
+   `DocumentPane`'s toolbar — and the pattern was already proven by
+   `Draw field`.
 
-- `AggregationService`: takes `(table, columnIndex, op, outputName)`,
-  parses cell content (currency / number — reuse logic from
-  `FormatValue` with a value-extraction inverse), computes aggregation,
-  returns the value.
-- New endpoint `POST /api/documents/{id}/tables/{tableId}/aggregate` →
-  body `{ columnIndex, operation, outputName }` → returns the created
-  `ExtractedField`. Persists as a regular `ExtractedField` with
-  `IsUserAdded = true` and a marker (e.g. `DataType = "Aggregation"` or
-  a dedicated `AggregationSource` JSON column on `ExtractedField`).
-- Recompute on cell edit? Two options: (1) recompute server-side when
-  the source column changes, (2) snapshot at creation time and require
-  the user to re-aggregate after edits. (1) is more correct but
-  requires tracking the source column; (2) is simpler. Recommend (2)
-  for v1 with a TODO comment for (1).
+**Backend (shipped):**
 
-**Frontend sketch:**
+- New `api/Aggregations/` namespace: `NumberTokenParser` (handles `$1,234.56`,
+  `(123.45)`, `12.5%`, mixed sign+currency orders), `AggregationOperation`
+  (enum), `AggregationCompute` (compute + format helpers),
+  `AggregationEvaluator` (single-source pipeline used by both save +
+  template-replay so the math can never drift between the two).
+- New `api/Services/PolygonGeometry.cs` — extracted from
+  `DocumentsController` (was `AxisAlignedBounds` + `WordCenterInside`)
+  so both template-rule extraction and aggregation share one
+  containment helper. `WordsInsideRegion(words, polygon) → matched`.
+- New `api/Services/{ILayoutStorageService,LayoutStorageService}.cs`
+  — persists `PageExtraction[]` as a sibling blob `<id>-layout.json`
+  next to the original PDF on upload. `GetOrBackfillAsync` lazy-runs
+  `prebuilt-layout` for legacy documents that have no layout blob
+  (one-time per legacy doc). Storage choice **blob, not SQL**: opaque
+  read-whole payload, ~6× cheaper, dodges the EF Core "every Find()
+  pulls fat columns" footgun, parallel naming with the original PDF.
+- New `TemplateAggregationRule` entity (separate from
+  `TemplateFieldRule`, **not** a Kind discriminator — confirmed
+  before coding). Carries `Name`, `Operation` (string), `IsRequired`,
+  `BoundingRegionsJson`. Cascade delete with template.
+- New nullable column `ExtractedField.AggregationConfigJson` —
+  `{operation, sourceTokenCount, evaluatedAt}`. Presence — not
+  `DataType` — is the authoritative signal so users can override the
+  type via the popover without losing the marker.
+- Single migration `Add_Aggregation_Tables` (additive). No `rm app.db*`.
+- New `AggregationsController` at
+  `POST /api/documents/{id}/aggregations/{preview,}` — preview returns
+  parsed tokens for the modal; save POST recomputes server-side from
+  layout (canonical), persists field, and **auto-promotes to a
+  template rule when the document has a matched template** (no
+  user-facing toggle — the modal copy promised this behavior).
+- `DocumentsController.ApplyTemplateRules` extended with
+  `ApplyAggregationRules` — replays each rule on every future matching
+  upload via the same `AggregationEvaluator`. Skip if a field with the
+  same name already exists (don't overwrite user edits).
+- `TemplatesController.Create` partitions source-doc fields:
+  fields with `AggregationConfigJson` → `TemplateAggregationRule`,
+  others → `TemplateFieldRule`. `Get`/`Duplicate` updated to load +
+  clone aggregation rules. `Update` deliberately ignores aggregation
+  rules for v1 (they persist through edits untouched — no regression).
+- New `tests/DocParsing.Api.Tests/` — xUnit v3, .NET 10, **78 tests**
+  covering parser / compute / evaluator. First test project in the
+  repo; bin/obj broadened to repo-wide gitignore.
 
-- `TableGrid` column header gets a small kebab/dropdown icon on hover.
-  Menu items: `Sum`, `Average`, `Count`, `Min`, `Max`. Picking one
-  opens a modal with `Name your aggregation field` input + computed
-  preview.
-- New `AggregateColumnModal` (small, mirrors `NameFieldModal`).
-- POST → optimistic field add → result appears in Inspector under
-  Custom (or a new "Computed" group if we want to differentiate).
-- Edge case: non-numeric columns. Disable Sum/Average/Min/Max when the
-  column has no parseable values; allow Count always.
+**Frontend (shipped):**
 
-**UX is contained** — dropdown lives on the column header, no toolbar
-additions, no template-edit-page changes.
+- `web/components/document/drawing-tools-popover.tsx` — split-button
+  dropdown with Field / Aggregation / Table-disabled rows (Table slot
+  pre-wired for #3.1(a)).
+- `DocumentPane` refactored: `drawMode: boolean` →
+  `drawMode: DrawMode | null` (where `DrawMode = "field" | "aggregation"`).
+  Photoshop-style "remember last selected" — clicking the main button
+  when off re-enters the most-recent mode. **Dropped `B` shortcut;
+  added `F` (field) and `A` (aggregation)**, same input-field guard.
+- `DrawCompletion` discriminated union (`DrawResult & { mode }`)
+  bubbles up from DrawingLayer through DocumentPane to ReviewStage,
+  which routes to the right post-draw modal.
+- `DrawingLayer` accepts `mode` — purple tint for aggregation, accent
+  for field. Per-mode hint copy.
+- `AggregationModal` — name + 5-card op grid + region pill + live
+  preview card. Calls `previewAggregation` once on mount; computes
+  Sum/Avg/Count/Min/Max locally on op switch (no extra round-trips
+  per toggle). Keeps it tight: dropped Concat / Formula / output-type
+  / decimals / exclude-negatives toggles per scoping decisions —
+  Required is the only "advanced" option, inlined next to the name.
+- `BoundingBoxOverlay` — aggregation fields rendered with purple bbox
+  (via `data-source="aggregation"` CSS Modules override of the
+  confidence-color classes). Confidence pct still shows in tag and
+  the low-confidence `!` badge still fires.
+- New `--color-agg{,-weak,-border,-ink}` tokens in `globals.css` —
+  same pattern as Phase G `--color-table-*`. Used in the drawing
+  preview rectangle, the modal accents, and the persisted bbox so
+  visual identity stays consistent end-to-end.
 
-#### Recommended order + scoping
+**Open polish items deferred (cheap to add later):**
 
-1. **(b) column aggregations** (~1–1.5 days) — ship first.
-2. **Sketch (a) UX** before coding — toolbar + template edit page +
-   modal flow. Get user sign-off on mocks.
-3. **(a) draw-to-add tables** (~2 days) — implement after sketch sign-off.
-4. **Then move to §2 field validation rules** (~1 day).
+- **Stale-on-cell-edit indicator** for aggregations whose source region
+  was edited. `AggregationConfig.evaluatedAt` carries the timestamp;
+  cheap to flag stale + add a "Recalculate" link.
+- **Inspector "CUSTOM — AGGREGATIONS" group** — backend already
+  surfaces `aggregationConfig` on the field response; the redesign
+  will consume it.
+- **Concat / Formula** ops — explicitly deferred. Concat is a
+  different shape (string output); Formula is 5–10× the surface
+  (parser, function whitelist, security review) and worth doing
+  properly later.
+- **Edit/Delete aggregations on the template edit page** — currently
+  aggregation rules persist through `PUT /templates/:id` untouched
+  but aren't editable. Inspector redesign covers the visibility side;
+  edit-page UI is a separate ~half-day extension.
+- **Export/Import** — `TemplateExportPayload` v2 doesn't include
+  aggregation rules. A v3 bump can fold them in when needed.
 
-Total: ~4–5 days to close §3 + start §2. Demo is **2026-05-29** (~4
-weeks from session end), plenty of runway.
+#### Recommended next order
+
+1. **Sketch (a) UX** before coding — toolbar Table slot is already
+   wired (disabled); template edit page + modal flow need design.
+   Get user sign-off on mocks.
+2. **(a) draw-to-add tables** (~2 days) — implement after sketch sign-off.
+3. **Then move to §2 field validation rules** (~1 day).
+
+Total: ~3 days to close §3 + start §2. Demo is **2026-05-29** (~4
+weeks runway), plenty of room.
 
 ---
 
