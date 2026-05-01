@@ -3,12 +3,13 @@
 .env.local
 .env.*.local
 
+# .NET — applies repo-wide so every project (api, tests, future ones) is covered
+bin/
+obj/
+*.user
+*.suo
+
 # .NET API
-api/bin/
-api/obj/
-api/*.user
-api/*.suo
-api/.vs/
 api/uploads/
 api/app.db
 api/app.db-shm
