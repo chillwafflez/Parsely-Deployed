@@ -4,14 +4,24 @@ import * as React from "react";
 import { AlertTriangle } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { percentBBoxToPolygonInches } from "@/lib/bbox";
-import type { DrawResult, DrawnRect } from "@/lib/types";
+import type { DrawMode, DrawResult, DrawnRect } from "@/lib/types";
 
 interface DrawingLayerProps {
   pageNumber: number;
   pageWidthPoints: number;
   pageHeightPoints: number;
+  /**
+   * Active drawing mode. Each mode tints the live-preview rectangle so the
+   * user gets a continuous visual confirmation of what they're capturing.
+   */
+  mode: DrawMode;
   onDrawComplete: (result: DrawResult) => void;
 }
+
+const MODE_HINT: Record<DrawMode, string> = {
+  field: "Click and drag over the region you want to capture",
+  aggregation: "Click and drag over the numbers you want to roll up",
+};
 
 interface DragState {
   startX: number;
@@ -33,6 +43,7 @@ export function DrawingLayer({
   pageNumber,
   pageWidthPoints,
   pageHeightPoints,
+  mode,
   onDrawComplete,
 }: DrawingLayerProps) {
   const ref = React.useRef<HTMLDivElement>(null);
@@ -89,8 +100,10 @@ export function DrawingLayer({
         <div
           className={cn(
             "absolute pointer-events-none rounded-[2px]",
-            "border-[1.5px] border-dashed border-accent",
-            "bg-[color-mix(in_oklab,var(--color-accent)_12%,transparent)]"
+            "border-[1.5px] border-dashed",
+            mode === "aggregation"
+              ? "border-agg bg-[color-mix(in_oklab,var(--color-agg)_12%,transparent)]"
+              : "border-accent bg-[color-mix(in_oklab,var(--color-accent)_12%,transparent)]"
           )}
           style={{
             left: `${preview.x}%`,
@@ -112,7 +125,7 @@ export function DrawingLayer({
           )}
         >
           <AlertTriangle size={12} />
-          Click and drag over the region you want to capture
+          {MODE_HINT[mode]}
         </div>
       )}
     </div>

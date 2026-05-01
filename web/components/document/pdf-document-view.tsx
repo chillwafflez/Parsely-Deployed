@@ -4,7 +4,12 @@ import * as React from "react";
 import { Document, Page, pdfjs } from "react-pdf";
 import "react-pdf/dist/Page/AnnotationLayer.css";
 import "react-pdf/dist/Page/TextLayer.css";
-import type { DrawResult, ExtractedField, ExtractedTable } from "@/lib/types";
+import type {
+  DrawMode,
+  DrawResult,
+  ExtractedField,
+  ExtractedTable,
+} from "@/lib/types";
 import type { Selection } from "@/lib/selection";
 import { BoundingBoxOverlay } from "./bounding-box-overlay";
 import { DrawingLayer } from "./drawing-layer";
@@ -46,7 +51,12 @@ interface PdfDocumentViewProps {
   onSelect?: (selection: Selection | null) => void;
   zoom: number;
   onPagesLoaded?: (count: number) => void;
-  drawMode: boolean;
+  /**
+   * Active drawing mode (or null when off). DrawingLayer renders only when
+   * non-null; the value is passed through so the layer's preview rectangle
+   * can theme itself per mode.
+   */
+  drawMode: DrawMode | null;
   onDrawComplete: (result: DrawResult) => void;
   /**
    * Optional renderer that replaces the default BoundingBoxOverlay.
@@ -159,6 +169,7 @@ export default function PdfDocumentView({
                   pageNumber={pageNumber}
                   pageWidthPoints={dims.widthPoints}
                   pageHeightPoints={dims.heightPoints}
+                  mode={drawMode}
                   onDrawComplete={onDrawComplete}
                 />
               )}

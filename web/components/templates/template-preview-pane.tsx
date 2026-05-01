@@ -78,7 +78,7 @@ export function TemplatePreviewPane({
           fileUrl={sourcePdfUrl}
           fields={[]}
           zoom={0.85}
-          drawMode={false}
+          drawMode={null}
           onDrawComplete={() => {}}
           renderPageOverlay={({ pageNumber, pageWidthPoints, pageHeightPoints }) => (
             <PreviewOverlay

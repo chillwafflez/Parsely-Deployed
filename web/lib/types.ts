@@ -48,6 +48,54 @@ export interface ExtractedField {
   isCorrected: boolean;
   isUserAdded: boolean;
   boundingRegions: BoundingRegion[];
+  /**
+   * Set when the field was produced by the aggregation feature (Sum / Avg /
+   * Count / Min / Max over a drawn region). Null on every other field.
+   * Presence — not <c>dataType</c> — is the authoritative signal so users
+   * can override the displayed type without losing the aggregation marker.
+   */
+  aggregationConfig: AggregationFieldConfig | null;
+}
+
+export type AggregationOperation = "Sum" | "Average" | "Count" | "Min" | "Max";
+
+export interface AggregationFieldConfig {
+  operation: AggregationOperation;
+  /** Numeric tokens that contributed to the value at evaluation time. */
+  sourceTokenCount: number;
+  /** ISO-8601 UTC timestamp of the last computation. */
+  evaluatedAt: string;
+}
+
+/** One numeric token detected inside an aggregation region. */
+export interface AggregationToken {
+  /** Original word content as Azure DI extracted it (e.g. "$1,234.56"). */
+  text: string;
+  /** Parsed numeric value (e.g. 1234.56). */
+  value: number;
+  /** Per-word OCR confidence in [0, 1]. */
+  confidence: number;
+  /** Word polygon in inches — same shape as field boundingRegions[].polygon. */
+  polygon: number[];
+}
+
+export interface AggregationPreviewRequest {
+  pageNumber: number;
+  /** Flat [x1,y1,x2,y2,…] in inches. */
+  polygon: number[];
+}
+
+export interface AggregationPreviewResponse {
+  tokens: AggregationToken[];
+}
+
+/** POST body for committing a new aggregation field. */
+export interface CreateAggregationPayload {
+  name: string;
+  operation: AggregationOperation;
+  isRequired: boolean;
+  pageNumber: number;
+  polygon: number[];
 }
 
 /** PATCH body for updating a field. Only provided properties are applied. */
@@ -81,6 +129,20 @@ export interface DrawResult {
   bbox: DrawnRect;
   polygon: number[];
 }
+
+/**
+ * Active drawing mode in the toolbar. <c>field</c> is the existing
+ * draw-to-add-field flow; <c>aggregation</c> is the draw-region-then-rollup
+ * flow. <c>table</c> is reserved for the future #3.1(a) feature and is not
+ * selectable in v1.
+ */
+export type DrawMode = "field" | "aggregation";
+
+/**
+ * Drawing result tagged with the mode it was captured under. ReviewStage
+ * branches on <c>mode</c> to open the right post-draw modal.
+ */
+export type DrawCompletion = DrawResult & { mode: DrawMode };
 
 export interface DocumentResponse {
   id: string;
