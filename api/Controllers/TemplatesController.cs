@@ -1,4 +1,5 @@
 using System.Text.Json;
+using DocParsing.Api.Aggregations;
 using DocParsing.Api.Catalog;
 using DocParsing.Api.Contracts;
 using DocParsing.Api.Data;
@@ -38,6 +39,7 @@ public class TemplatesController(AppDbContext db, ILogger<TemplatesController> l
     {
         var template = await db.Templates
             .Include(t => t.Rules)
+            .Include(t => t.AggregationRules)
             .AsNoTracking()
             .FirstOrDefaultAsync(t => t.Id == id, ct);
 
@@ -83,6 +85,17 @@ public class TemplatesController(AppDbContext db, ILogger<TemplatesController> l
             ? new Dictionary<string, RuleOverride>(StringComparer.OrdinalIgnoreCase)
             : new Dictionary<string, RuleOverride>(request.RuleOverrides, StringComparer.OrdinalIgnoreCase);
 
+        // Aggregation fields (those with AggregationConfigJson set) belong in
+        // AggregationRules, not Rules — they aren't text-extraction rules,
+        // they're rollup operations over a region. Partition the source
+        // fields once and route each side into its respective collection.
+        var sourceAggregations = sourceDoc.ExtractedFields
+            .Where(f => !string.IsNullOrWhiteSpace(f.AggregationConfigJson))
+            .ToList();
+        var sourceFieldRules = sourceDoc.ExtractedFields
+            .Where(f => string.IsNullOrWhiteSpace(f.AggregationConfigJson))
+            .ToList();
+
         var template = new Template
         {
             Id = Guid.NewGuid(),
@@ -93,7 +106,7 @@ public class TemplatesController(AppDbContext db, ILogger<TemplatesController> l
             VendorHint = vendorHint,
             SourceDocumentId = sourceDoc.Id,
             CreatedAt = DateTime.UtcNow,
-            Rules = sourceDoc.ExtractedFields
+            Rules = sourceFieldRules
                 .Select(f =>
                 {
                     var rule = new TemplateFieldRule
@@ -113,6 +126,11 @@ public class TemplatesController(AppDbContext db, ILogger<TemplatesController> l
 
                     return rule;
                 })
+                .ToList(),
+            AggregationRules = sourceAggregations
+                .Select(BuildAggregationRuleFromField)
+                .Where(r => r is not null)
+                .Select(r => r!)
                 .ToList(),
         };
 
@@ -212,6 +230,7 @@ public class TemplatesController(AppDbContext db, ILogger<TemplatesController> l
     {
         var source = await db.Templates
             .Include(t => t.Rules)
+            .Include(t => t.AggregationRules)
             .AsNoTracking()
             .FirstOrDefaultAsync(t => t.Id == id, ct);
 
@@ -239,6 +258,16 @@ public class TemplatesController(AppDbContext db, ILogger<TemplatesController> l
                     BoundingRegionsJson = r.BoundingRegionsJson,
                     Hint = r.Hint,
                     AliasesJson = r.AliasesJson,
+                })
+                .ToList(),
+            AggregationRules = source.AggregationRules
+                .Select(r => new TemplateAggregationRule
+                {
+                    Id = Guid.NewGuid(),
+                    Name = r.Name,
+                    Operation = r.Operation,
+                    IsRequired = r.IsRequired,
+                    BoundingRegionsJson = r.BoundingRegionsJson,
                 })
                 .ToList(),
         };
@@ -409,6 +438,31 @@ public class TemplatesController(AppDbContext db, ILogger<TemplatesController> l
             ? Array.Empty<BoundingRegionResponse>()
             : JsonSerializer.Deserialize<List<BoundingRegionResponse>>(json)
               ?? new List<BoundingRegionResponse>();
+
+    /// <summary>
+    /// Snapshots an aggregation field on the source document into a
+    /// <see cref="TemplateAggregationRule"/>. Returns <c>null</c> when the
+    /// stored config can't be deserialized — defensive guard against any
+    /// future shape change leaving an old document partially convertible.
+    /// </summary>
+    private static TemplateAggregationRule? BuildAggregationRuleFromField(ExtractedField field)
+    {
+        if (string.IsNullOrWhiteSpace(field.AggregationConfigJson)) return null;
+
+        var config = JsonSerializer.Deserialize<AggregationFieldConfig>(field.AggregationConfigJson);
+        if (config is null) return null;
+
+        if (!AggregationCompute.TryParseOperation(config.Operation, out var op)) return null;
+
+        return new TemplateAggregationRule
+        {
+            Id = Guid.NewGuid(),
+            Name = field.Name,
+            Operation = op.ToString(),
+            IsRequired = field.IsRequired,
+            BoundingRegionsJson = field.BoundingRegionsJson,
+        };
+    }
 
     /// <summary>
     /// Downloads need a filesystem-safe name — strip anything that isn't

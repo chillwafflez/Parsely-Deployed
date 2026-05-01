@@ -1,4 +1,5 @@
 using System.Text.Json;
+using DocParsing.Api.Aggregations;
 using DocParsing.Api.Catalog;
 using DocParsing.Api.Contracts;
 using DocParsing.Api.Data;
@@ -14,6 +15,7 @@ namespace DocParsing.Api.Controllers;
 public class DocumentsController(
     IDocumentIntelligenceService intelligence,
     IBlobStorageService blobs,
+    ILayoutStorageService layoutStorage,
     AppDbContext db,
     ILogger<DocumentsController> logger) : ControllerBase
 {
@@ -93,6 +95,7 @@ public class DocumentsController(
 
             manualTemplate = await db.Templates
                 .Include(t => t.Rules)
+                .Include(t => t.AggregationRules)
                 .FirstOrDefaultAsync(t => t.Id == templateId, ct);
 
             if (manualTemplate is null)
@@ -176,6 +179,23 @@ public class DocumentsController(
                 });
             }
 
+            // Persist the page-level layout so spatial features (aggregation
+            // preview, template-rule replay) can re-query it later without
+            // re-running Azure DI. Failure here is non-fatal — the document
+            // still completes, and a missing layout will be lazily backfilled
+            // on first read.
+            try
+            {
+                await layoutStorage.SaveAsync(document.Id, extraction.Pages, ct);
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex,
+                    "Failed to persist layout blob for document {Id}; continuing. " +
+                    "Layout will be backfilled on first spatial query.",
+                    document.Id);
+            }
+
             document.Status = DocumentStatus.Completed;
             document.CompletedAt = DateTime.UtcNow;
 
@@ -238,6 +258,7 @@ public class DocumentsController(
         // even if their identifier strings happen to collide.
         var match = await db.Templates
             .Include(t => t.Rules)
+            .Include(t => t.AggregationRules)
             .Where(t => t.ModelId == modelId
                         && t.VendorHint != null
                         && t.VendorHint.ToLower() == normalized)
@@ -253,12 +274,13 @@ public class DocumentsController(
 
     /// <summary>
     /// Applies a matched template's rules to a freshly-extracted document.
-    /// For fields Azure DI already extracted (matched by name, case-insensitive),
-    /// overrides <see cref="ExtractedField.DataType"/> and
-    /// <see cref="ExtractedField.IsRequired"/> from the rule. For rules that
-    /// weren't extracted at all, runs a region-based word pickup against the
-    /// layout results and injects a field with the extracted value (or an
-    /// empty placeholder with zero confidence if no words fell inside).
+    /// Field rules: for fields Azure DI already extracted (matched by name,
+    /// case-insensitive), overrides <see cref="ExtractedField.DataType"/>
+    /// and <see cref="ExtractedField.IsRequired"/>; for rules that weren't
+    /// extracted at all, runs a region-based word pickup against the layout
+    /// and injects a field with the extracted value. Aggregation rules
+    /// (per-template Sum/Avg/Count/Min/Max) recompute against the same
+    /// layout and inject the result as a new field.
     /// </summary>
     private static void ApplyTemplateRules(
         Document document,
@@ -295,6 +317,65 @@ public class DocumentsController(
                 IsCorrected = false,
                 IsUserAdded = true,
                 BoundingRegionsJson = rule.BoundingRegionsJson,
+            });
+        }
+
+        ApplyAggregationRules(document, template, pages);
+    }
+
+    /// <summary>
+    /// Replays each <see cref="TemplateAggregationRule"/> against the
+    /// document's freshly-computed layout: filters words by the rule's
+    /// region, parses numeric tokens, computes the operation, and injects
+    /// an <see cref="ExtractedField"/> with the result. Skips rules whose
+    /// name collides with an already-extracted field so the user's existing
+    /// values are never silently overwritten.
+    /// </summary>
+    private static void ApplyAggregationRules(
+        Document document,
+        Template template,
+        IReadOnlyList<PageExtraction> pages)
+    {
+        var evaluatedAt = DateTime.UtcNow;
+
+        foreach (var rule in template.AggregationRules)
+        {
+            if (document.ExtractedFields.Any(f =>
+                    f.Name.Equals(rule.Name, StringComparison.OrdinalIgnoreCase)))
+            {
+                continue;
+            }
+
+            if (!AggregationCompute.TryParseOperation(rule.Operation, out var operation))
+            {
+                // Unknown operation strings shouldn't reach here (the save
+                // endpoint validates), but be defensive — skip rather than
+                // crash a whole upload over one bad rule.
+                continue;
+            }
+
+            if (string.IsNullOrWhiteSpace(rule.BoundingRegionsJson)) continue;
+
+            var regions = JsonSerializer.Deserialize<List<BoundingRegionResponse>>(rule.BoundingRegionsJson);
+            if (regions is null || regions.Count == 0) continue;
+
+            var region = regions[0];
+            var evaluation = AggregationEvaluator.Evaluate(
+                operation, region.Polygon, region.PageNumber, pages, evaluatedAt);
+
+            document.ExtractedFields.Add(new ExtractedField
+            {
+                Id = Guid.NewGuid(),
+                DocumentId = document.Id,
+                Name = rule.Name,
+                Value = evaluation.Value,
+                DataType = "Number",
+                Confidence = evaluation.Confidence,
+                IsRequired = rule.IsRequired,
+                IsCorrected = false,
+                IsUserAdded = true,
+                BoundingRegionsJson = rule.BoundingRegionsJson,
+                AggregationConfigJson = JsonSerializer.Serialize(evaluation.Config),
             });
         }
     }
@@ -473,62 +554,13 @@ public class DocumentsController(
         var page = pages.FirstOrDefault(p => p.PageNumber == region.PageNumber);
         if (page is null) return (null, 0f);
 
-        var bounds = AxisAlignedBounds(region.Polygon);
-        if (!bounds.HasValue) return (null, 0f);
-
-        var matched = page.Words
-            .Where(w => WordCenterInside(w.Polygon, bounds.Value))
-            .ToList();
-
+        var matched = PolygonGeometry.WordsInsideRegion(page.Words, region.Polygon);
         if (matched.Count == 0) return (null, 0f);
 
         var value = string.Join(" ", matched.Select(w => w.Content)).Trim();
         var confidence = matched.Average(w => w.Confidence);
 
         return (string.IsNullOrWhiteSpace(value) ? null : value, confidence);
-    }
-
-    private static (float MinX, float MinY, float MaxX, float MaxY)? AxisAlignedBounds(
-        IReadOnlyList<float> polygon)
-    {
-        if (polygon is null || polygon.Count < 2) return null;
-
-        float minX = float.MaxValue, minY = float.MaxValue;
-        float maxX = float.MinValue, maxY = float.MinValue;
-
-        for (int i = 0; i + 1 < polygon.Count; i += 2)
-        {
-            var x = polygon[i];
-            var y = polygon[i + 1];
-            if (x < minX) minX = x;
-            if (x > maxX) maxX = x;
-            if (y < minY) minY = y;
-            if (y > maxY) maxY = y;
-        }
-
-        return (minX, minY, maxX, maxY);
-    }
-
-    private static bool WordCenterInside(
-        IReadOnlyList<float> wordPolygon,
-        (float MinX, float MinY, float MaxX, float MaxY) bounds)
-    {
-        if (wordPolygon is null || wordPolygon.Count < 2) return false;
-
-        float sumX = 0, sumY = 0;
-        int count = 0;
-        for (int i = 0; i + 1 < wordPolygon.Count; i += 2)
-        {
-            sumX += wordPolygon[i];
-            sumY += wordPolygon[i + 1];
-            count++;
-        }
-        if (count == 0) return false;
-
-        var cx = sumX / count;
-        var cy = sumY / count;
-
-        return cx >= bounds.MinX && cx <= bounds.MaxX && cy >= bounds.MinY && cy <= bounds.MaxY;
     }
 
     private static List<BoundingRegionResponse> ToRegionResponses(

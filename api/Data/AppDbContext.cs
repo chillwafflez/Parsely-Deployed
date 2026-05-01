@@ -10,6 +10,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<ExtractedTable> ExtractedTables => Set<ExtractedTable>();
     public DbSet<Template> Templates => Set<Template>();
     public DbSet<TemplateFieldRule> TemplateFieldRules => Set<TemplateFieldRule>();
+    public DbSet<TemplateAggregationRule> TemplateAggregationRules => Set<TemplateAggregationRule>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -99,6 +100,20 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
 
             entity.HasOne(r => r.Template)
                   .WithMany(t => t.Rules)
+                  .HasForeignKey(r => r.TemplateId)
+                  .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasIndex(r => new { r.TemplateId, r.Name });
+        });
+
+        modelBuilder.Entity<TemplateAggregationRule>(entity =>
+        {
+            entity.HasKey(r => r.Id);
+            entity.Property(r => r.Name).HasMaxLength(256).IsRequired();
+            entity.Property(r => r.Operation).HasMaxLength(16).IsRequired();
+
+            entity.HasOne(r => r.Template)
+                  .WithMany(t => t.AggregationRules)
                   .HasForeignKey(r => r.TemplateId)
                   .OnDelete(DeleteBehavior.Cascade);
 

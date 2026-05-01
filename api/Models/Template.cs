@@ -26,4 +26,5 @@ public class Template
     public Guid? SourceDocumentId { get; set; }
 
     public List<TemplateFieldRule> Rules { get; set; } = new();
+    public List<TemplateAggregationRule> AggregationRules { get; set; } = new();
 }
