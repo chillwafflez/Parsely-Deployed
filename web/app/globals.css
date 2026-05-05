@@ -44,6 +44,15 @@
   --color-agg-border: oklch(0.86 0.08 295);
   --color-agg-ink: oklch(0.42 0.18 295);
 
+  /* Custom — indigo, used by the "custom" source chip on user-added
+     non-aggregation fields. Distinct from --color-agg (violet) so the chip
+     visually separates the two flavours of user-authored data in the
+     Inspector. */
+  --color-custom: oklch(0.55 0.18 265);
+  --color-custom-weak: oklch(0.96 0.04 265);
+  --color-custom-border: oklch(0.86 0.08 265);
+  --color-custom-ink: oklch(0.42 0.16 265);
+
   /* Typography — next/font injects the font-family via CSS vars on <html> */
   --font-ui: var(--font-inter), system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --font-mono: var(--font-jetbrains-mono), ui-monospace, Menlo, monospace;

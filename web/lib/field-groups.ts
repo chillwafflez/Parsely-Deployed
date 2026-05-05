@@ -29,7 +29,13 @@ interface ModelGrouping {
   order: string[];
 }
 
-const USER_ADDED_GROUP = "Custom";
+/** User-authored non-aggregation fields. */
+export const USER_ADDED_GROUP = "Custom";
+/** User-authored fields with an `aggregationConfig` (Sum / Avg / Count / Min / Max).
+ *  Surfaces above plain Custom so the demo-grade rollups read prominently. */
+export const USER_ADDED_AGG_GROUP = "Aggregations";
+
+const USER_GROUPS_ORDER = [USER_ADDED_AGG_GROUP, USER_ADDED_GROUP];
 
 const INVOICE_GROUPING: ModelGrouping = {
   rules: [
@@ -61,7 +67,7 @@ const INVOICE_GROUPING: ModelGrouping = {
     },
   ],
   fallback: "Document",
-  order: ["Document", "Parties", "Totals", "Line Items", USER_ADDED_GROUP],
+  order: ["Document", "Parties", "Totals", "Line Items", ...USER_GROUPS_ORDER],
 };
 
 const RECEIPT_GROUPING: ModelGrouping = {
@@ -74,7 +80,7 @@ const RECEIPT_GROUPING: ModelGrouping = {
     },
   ],
   fallback: "Document",
-  order: ["Document", "Merchant", "Totals", "Line Items", USER_ADDED_GROUP],
+  order: ["Document", "Merchant", "Totals", "Line Items", ...USER_GROUPS_ORDER],
 };
 
 const W2_GROUPING: ModelGrouping = {
@@ -101,7 +107,7 @@ const W2_GROUPING: ModelGrouping = {
     "Employee",
     "Employer",
     "Wages & Withholdings",
-    USER_ADDED_GROUP,
+    ...USER_GROUPS_ORDER,
   ],
 };
 
@@ -126,7 +132,7 @@ const PAYSTUB_GROUPING: ModelGrouping = {
     "Employee",
     "Earnings",
     "Deductions",
-    USER_ADDED_GROUP,
+    ...USER_GROUPS_ORDER,
   ],
 };
 
@@ -155,7 +161,7 @@ const BANK_STATEMENT_GROUPING: ModelGrouping = {
     "Bank",
     "Balances",
     "Transactions",
-    USER_ADDED_GROUP,
+    ...USER_GROUPS_ORDER,
   ],
 };
 
@@ -175,22 +181,29 @@ const GROUPINGS: Record<string, ModelGrouping> = {
 const GENERIC_GROUPING: ModelGrouping = {
   rules: [],
   fallback: "Fields",
-  order: ["Fields", USER_ADDED_GROUP],
+  order: ["Fields", ...USER_GROUPS_ORDER],
 };
 
 function getGrouping(modelId: string): ModelGrouping {
   return GROUPINGS[modelId] ?? GENERIC_GROUPING;
 }
 
-export function inferFieldGroup(
-  modelId: string,
-  fieldName: string,
-  isUserAdded = false
-): string {
-  if (isUserAdded) return USER_ADDED_GROUP;
+/** Subset of {@link ExtractedField} the grouper actually inspects — keeps the
+ *  signature decoupled from the full DTO shape so callers can pass partials. */
+type GroupableField = Pick<
+  ExtractedField,
+  "name" | "isUserAdded" | "aggregationConfig"
+>;
+
+function inferFieldGroup(modelId: string, field: GroupableField): string {
+  if (field.isUserAdded) {
+    return field.aggregationConfig !== null
+      ? USER_ADDED_AGG_GROUP
+      : USER_ADDED_GROUP;
+  }
 
   const grouping = getGrouping(modelId);
-  const lower = fieldName.toLowerCase();
+  const lower = field.name.toLowerCase();
 
   for (const rule of grouping.rules) {
     if (rule.fields?.some((f) => f.toLowerCase() === lower)) return rule.group;
@@ -220,7 +233,7 @@ export function groupFields(
   }
 
   for (const field of fields) {
-    const group = inferFieldGroup(modelId, field.name, field.isUserAdded);
+    const group = inferFieldGroup(modelId, field);
     if (!buckets.has(group)) buckets.set(group, []);
     buckets.get(group)!.push(field);
   }

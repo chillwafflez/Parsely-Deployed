@@ -4,10 +4,8 @@ import * as React from "react";
 import { ChevronRight, Table as TableIcon } from "lucide-react";
 import { cn } from "@/lib/cn";
 
-interface InspectorTabularRowProps {
-  /** Display label — for parented rows this is the originating field name
-   *  (e.g., "Items"); for orphan rows under "Records" it's the synth table's
-   *  name (e.g., "Transactions" / "Transactions [2]"). */
+interface InspectorOrphanTableRowProps {
+  /** Synth table's name (e.g., "Transactions" / "Transactions [2]"). */
   label: string;
   /** Resolved synth table id; null when no matching table exists (defensive
    *  — should not happen in practice since EmitFields only emits a Tabular
@@ -19,25 +17,22 @@ interface InspectorTabularRowProps {
 }
 
 /**
- * Phase G — clickable opener for a synthesized table. Replaces inline
- * editing for `List<Dictionary>` fields: the actual data lives in the synth
- * table cells, edits happen in the bottom drawer's grid. Visually consistent
- * with <see cref="InspectorTableRow"/> in the Tables section, but rendered
- * inside the field section (parented to a Tabular field) or under the
- * "Records" sub-header (orphan, e.g. nested Transactions).
+ * Card-shaped opener for an orphan synth table — i.e. a synthesized table
+ * that has no parented Tabular field row in the regular field groups
+ * (typically nested cases like `Accounts[i].Transactions`). Rendered under
+ * the "Records" group. Parented synth tables use <InspectorTabularFieldRow/>
+ * instead, which adopts the scalar-field row shape.
  */
-export function InspectorTabularRow({
+export function InspectorOrphanTableRow({
   label,
   tableId,
   rowCount,
   active,
   onSelect,
-}: InspectorTabularRowProps) {
+}: InspectorOrphanTableRowProps) {
   const disabled = tableId === null;
   const recordLabel = `${rowCount} record${rowCount === 1 ? "" : "s"}`;
 
-  // role=button + Enter/Space matches the sibling InspectorTableRow pattern,
-  // so keyboard users get the same affordance as in the Tables section.
   const handleKey = (e: React.KeyboardEvent<HTMLDivElement>) => {
     if (disabled) return;
     if (e.key === "Enter" || e.key === " ") {
@@ -55,48 +50,46 @@ export function InspectorTabularRow({
       onClick={disabled ? undefined : () => onSelect(tableId!)}
       onKeyDown={handleKey}
       className={cn(
-        "group grid grid-cols-[auto_1fr_auto_auto] gap-2.5 items-center",
-        "mx-3 my-1 px-2.5 py-2 rounded-md",
+        "flex items-center gap-2.5",
+        "px-2.5 py-2 rounded-md",
         "border transition-colors",
         "focus-visible:outline-[2px_solid_var(--color-accent)] focus-visible:outline-offset-2",
         disabled
           ? "bg-surface-2 border-line opacity-60 cursor-not-allowed"
           : active
             ? "bg-table-weak border-table-border cursor-pointer"
-            : "bg-surface-2 border-line hover:bg-surface cursor-pointer"
+            : "bg-surface border-line hover:bg-surface-2 hover:border-line-strong cursor-pointer"
       )}
     >
       <div
         aria-hidden
         className={cn(
-          "w-[26px] h-[26px] rounded-[5px]",
-          "grid place-items-center text-table-ink",
-          "border",
-          active ? "bg-surface border-table-border" : "bg-surface border-line"
+          "w-7 h-7 rounded-md grid place-items-center text-table-ink shrink-0",
+          active ? "bg-surface" : "bg-table-weak"
         )}
       >
-        <TableIcon size={13} />
+        <TableIcon size={14} />
       </div>
-      <div className="min-w-0">
-        <div className="text-[12.5px] font-medium text-ink truncate">
+      <div className="min-w-0 flex-1">
+        <div className="text-[12px] font-medium text-ink truncate">
           {label}
         </div>
-        <div className="text-[11px] text-ink-3 mt-px">Open table</div>
+        <div className="text-[10.5px] text-ink-3 mt-px">Open table</div>
       </div>
       <span
         className={cn(
-          "inline-flex items-center px-2 py-0.5 rounded-full",
-          "text-[10.5px] font-mono font-medium",
+          "inline-flex items-center px-2 py-0.5 rounded-full shrink-0",
+          "text-[10px] font-medium font-mono",
           "bg-table-weak text-table-ink border border-table-border"
         )}
       >
         {recordLabel}
       </span>
       <ChevronRight
-        size={14}
+        size={12}
         aria-hidden
         className={cn(
-          "text-ink-3 transition-transform",
+          "text-ink-4 transition-transform shrink-0",
           active && "rotate-90"
         )}
       />
